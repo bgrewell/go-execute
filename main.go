@@ -128,6 +128,7 @@ func ExecuteCmdWithTimeout(command string, seconds int) (output string, err erro
 func ExecutePowershell(command string) (stdout string, stderr string, err error) {
 	command = strings.ReplaceAll(command,"\"", "\\\"")
 	command = strings.ReplaceAll(command, "'", "\\'")
+	command = fmt.Sprintf("'%s'", command)
 	var bout, berr bytes.Buffer
 	exename, err := exec.LookPath("powershell.exe")
 	exe := exec.Command(exename, "-C", command)
