@@ -123,3 +123,16 @@ func ExecuteCmdWithTimeout(command string, seconds int) (output string, err erro
 	}
 	return string(outBytes), err
 }
+
+// ExecutePowershell executes a command using powershell and returns the stdout, stderr and any error code
+func ExecutePowershell(command string) (stdout string, stderr string, err error) {
+	command = strings.ReplaceAll(command,"\"", "\\\"")
+	command = strings.ReplaceAll(command, "'", "\\'")
+	var bout, berr bytes.Buffer
+	exename, err := exec.LookPath("powershell.exe")
+	exe := exec.Command(exename, "-C", command)
+	exe.Stdout = &bout
+	exe.Stderr = &berr
+	err = exe.Run()
+	return string(bout.Bytes()), string(berr.Bytes()), err
+}
