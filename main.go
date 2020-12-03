@@ -134,7 +134,7 @@ func ExecutePowershell(command string) (stdout string, stderr string, err error)
 	//command = strings.ReplaceAll(command,"\"", "\\\"")
 	//command = strings.ReplaceAll(command, "'", "\\'")
 	//command = fmt.Sprintf("'%s'", command)
-	encCommand := conversions.ConvertToUTF16LEString(command)
+	encCommand := conversions.ConvertToUTF16LEBase64String(command)
 	if Debug {
 		fmt.Println(encCommand)
 	}
