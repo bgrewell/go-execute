@@ -3,6 +3,7 @@ package execute
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -126,12 +127,13 @@ func ExecuteCmdWithTimeout(command string, seconds int) (output string, err erro
 
 // ExecutePowershell executes a command using powershell and returns the stdout, stderr and any error code
 func ExecutePowershell(command string) (stdout string, stderr string, err error) {
-	command = strings.ReplaceAll(command,"\"", "\\\"")
-	command = strings.ReplaceAll(command, "'", "\\'")
-	command = fmt.Sprintf("'%s'", command)
+	//command = strings.ReplaceAll(command,"\"", "\\\"")
+	//command = strings.ReplaceAll(command, "'", "\\'")
+	//command = fmt.Sprintf("'%s'", command)
+	encCommand := base64.StdEncoding.EncodeToString([]byte(command))
 	var bout, berr bytes.Buffer
 	exename, err := exec.LookPath("powershell.exe")
-	exe := exec.Command(exename, "-C", command)
+	exe := exec.Command(exename, "-enc", encCommand)
 	exe.Stdout = &bout
 	exe.Stderr = &berr
 	err = exe.Run()
