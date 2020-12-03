@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+var (
+	Debug = false
+)
+
 func Pipeline(cmds ...*exec.Cmd) (pipeLineOutput, collectedStandardError []byte, pipeLineError error) {
 	// Require at least one command
 	if len(cmds) < 1 {
@@ -131,6 +135,9 @@ func ExecutePowershell(command string) (stdout string, stderr string, err error)
 	//command = strings.ReplaceAll(command, "'", "\\'")
 	//command = fmt.Sprintf("'%s'", command)
 	encCommand := base64.StdEncoding.EncodeToString([]byte(command))
+	if Debug {
+		fmt.Println(encCommand)
+	}
 	var bout, berr bytes.Buffer
 	exename, err := exec.LookPath("powershell.exe")
 	exe := exec.Command(exename, "-enc", encCommand)
