@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -104,7 +105,7 @@ func ExecuteCmd(command string) (output string, err error) {
 	return string(out), err
 }
 
-// ExecuteCmdEx executes commands and returns the stdout and stderr as seperate strings
+// ExecuteCmdEx executes commands and returns the stdout and stderr as separate strings
 func ExecuteCmdEx(command string) (stdout string, stderr string, err error) {
 	var bout, berr bytes.Buffer
 	cmdParts := strings.Split(command, " ")
@@ -114,6 +115,20 @@ func ExecuteCmdEx(command string) (stdout string, stderr string, err error) {
 	exe.Stderr = &berr
 	err = exe.Run()
 	return string(bout.Bytes()), string(berr.Bytes()), err
+}
+
+// ExecuteCmdWithEnvVars executes a command with the passed in env vars set and returns the results
+func ExecuteCmdWithEnvVars(command string, vars []string) (stdout string, stderr string, err error) {
+	var bout, berr bytes.Buffer
+	cmdParts := strings.Fields(command)
+	exename, err := exec.LookPath(cmdParts[0])
+	exe := exec.Command(exename, cmdParts[1:]...)
+	exe.Env = os.Environ()
+	exe.Env = append(exe.Env, vars...)
+	exe.Stdout = &bout
+	exe.Stderr = &berr
+	err = exe.Run()
+	return string(bout.Bytes()), string(berr.Bytes()), err)
 }
 
 // ExecuteCmdWithTimeout executes commands with a timeout. If the timeout occurs the command is terminated and an error is returned
