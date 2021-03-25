@@ -16,6 +16,10 @@ var (
 	Debug = false
 )
 
+//TODO: This needs to be all cleaned up
+//TODO: - Remove excessive duplication of code
+//TODO: - Allow env vars to be passed in most functions as pointer to []string
+
 func Pipeline(cmds ...*exec.Cmd) (pipeLineOutput, collectedStandardError []byte, pipeLineError error) {
 	// Require at least one command
 	if len(cmds) < 1 {
