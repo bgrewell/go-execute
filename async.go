@@ -3,6 +3,7 @@ package execute
 import (
 	"context"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -55,6 +56,10 @@ func ExecuteAsyncWithCancel(cmd string, env *[]string) (stdOut io.ReadCloser, st
 		return nil, nil, nil, nil, err
 	}
 	exe := exec.CommandContext(ctx, binary, cmdParts[1:]...)
+	exe.Env = os.Environ()
+	if env != nil {
+		exe.Env = append(exe.Env, *env...)
+	}
 	stdOut, err = exe.StdoutPipe()
 	if err != nil {
 		defer cancel()
