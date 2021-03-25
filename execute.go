@@ -128,7 +128,7 @@ func ExecuteCmdWithEnvVars(command string, vars []string) (stdout string, stderr
 	exe.Stdout = &bout
 	exe.Stderr = &berr
 	err = exe.Run()
-	return string(bout.Bytes()), string(berr.Bytes()), err)
+	return string(bout.Bytes()), string(berr.Bytes()), err
 }
 
 // ExecuteCmdWithTimeout executes commands with a timeout. If the timeout occurs the command is terminated and an error is returned
