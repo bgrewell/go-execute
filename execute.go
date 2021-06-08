@@ -5,11 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/BGrewell/go-conversions"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
-	"github.com/BGrewell/go-conversions"
 )
 
 var (
@@ -159,7 +159,7 @@ func ExecutePowershell(command string) (stdout string, stderr string, err error)
 	}
 	var bout, berr bytes.Buffer
 	exename, err := exec.LookPath("powershell.exe")
-	exe := exec.Command(exename, "-enc", encCommand)
+	exe := exec.Command(exename, "-NoProfile", "-enc", encCommand)
 	exe.Stdout = &bout
 	exe.Stderr = &berr
 	err = exe.Run()
