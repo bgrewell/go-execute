@@ -8,7 +8,6 @@ import (
 	"github.com/BGrewell/go-conversions"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 )
 
@@ -70,7 +69,10 @@ func ExecutePipedCmds(commands []string) (output string, err error) {
 	for idx := 0; idx < len(commands); idx++ {
 		// break the command into it's fields
 		fmt.Println("cmd: " + commands[idx])
-		cmdParts := strings.Fields(commands[idx])
+		cmdParts, err := Fields(commands[idx])
+		if err != nil {
+			return "", err
+		}
 		exe, err := exec.LookPath(cmdParts[0])
 		if err != nil {
 			return "", err
@@ -102,7 +104,10 @@ func ExecuteCmds(commands []string) (outputs []string, errs []error) {
 
 // ExecuteCmd executes commands and returns the output and any errors
 func ExecuteCmd(command string) (output string, err error) {
-	cmdParts := strings.Split(command, " ")
+	cmdParts, err := Fields(command)
+	if err != nil {
+		return "", err
+	}
 	exename, err := exec.LookPath(cmdParts[0])
 	exe := exec.Command(exename, cmdParts[1:]...)
 	out, err := exe.CombinedOutput()
@@ -112,7 +117,10 @@ func ExecuteCmd(command string) (output string, err error) {
 // ExecuteCmdEx executes commands and returns the stdout and stderr as separate strings
 func ExecuteCmdEx(command string) (stdout string, stderr string, err error) {
 	var bout, berr bytes.Buffer
-	cmdParts := strings.Split(command, " ")
+	cmdParts, err := Fields(command)
+	if err != nil {
+		return "", "", err
+	}
 	exename, err := exec.LookPath(cmdParts[0])
 	exe := exec.Command(exename, cmdParts[1:]...)
 	exe.Stdout = &bout
@@ -124,7 +132,10 @@ func ExecuteCmdEx(command string) (stdout string, stderr string, err error) {
 // ExecuteCmdWithEnvVars executes a command with the passed in env vars set and returns the results
 func ExecuteCmdWithEnvVars(command string, vars []string) (stdout string, stderr string, err error) {
 	var bout, berr bytes.Buffer
-	cmdParts := strings.Fields(command)
+	cmdParts, err := Fields(command)
+	if err != nil {
+		return "", "", err
+	}
 	exename, err := exec.LookPath(cmdParts[0])
 	exe := exec.Command(exename, cmdParts[1:]...)
 	exe.Env = os.Environ()
@@ -139,7 +150,10 @@ func ExecuteCmdWithEnvVars(command string, vars []string) (stdout string, stderr
 func ExecuteCmdWithTimeout(command string, seconds int) (output string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
 	defer cancel()
-	cmdParts := strings.Split(command, " ")
+	cmdParts, err := Fields(command)
+	if err != nil {
+		return "", err
+	}
 	exename, err := exec.LookPath(cmdParts[0])
 	outBytes, err := exec.CommandContext(ctx, exename, cmdParts[1:]...).Output()
 	if ctx.Err() == context.DeadlineExceeded {
