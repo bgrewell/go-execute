@@ -4,3 +4,5 @@ github.com/BGrewell/go-conversions v0.0.0-20201203153424-7bb733fcbd14 h1:0B3c+U5
 github.com/BGrewell/go-conversions v0.0.0-20201203153424-7bb733fcbd14/go.mod h1:F9LFbv74IsCpcOhmhzZtmD9D828z1iSk7HFbPYCBr78=
 github.com/BGrewell/go-conversions v0.0.0-20201203155646-5e189e4ca087 h1:/ZR3IHtTSPqwzYQSfZYwGjrmDI5c1u2jEDDtT75Fmqw=
 github.com/BGrewell/go-conversions v0.0.0-20201203155646-5e189e4ca087/go.mod h1:XtXcz/MP04vhr6c6R/5gZPJZVQpbXlFsKTHr5yy/5sU=
+github.com/BGrewell/go-conversions v0.0.0-20210512190113-ef0a66d37f0f h1:R3AmWTnL4VRNqK3dpUEwi+RCUZCNczbBPhA4oyMy+aI=
+github.com/BGrewell/go-conversions v0.0.0-20210512190113-ef0a66d37f0f/go.mod h1:XtXcz/MP04vhr6c6R/5gZPJZVQpbXlFsKTHr5yy/5sU=
