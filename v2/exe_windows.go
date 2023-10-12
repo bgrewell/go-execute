@@ -1,11 +1,16 @@
 package v2
 
+import (
+	"io"
+	"time"
+)
+
 func NewExecutor(env []string) Executor {
 	return NewExecutorAsUser("", env)
 }
 
 func NewExecutorAsUser(user string, env []string) Executor {
-	return &LinuxExecutor{
+	return &WindowsExecutor{
 		Environment: env,
 		User:        user,
 	}
@@ -48,5 +53,9 @@ func (e WindowsExecutor) ExecuteSeparateWithTimeout(command string, timeout time
 
 func (e WindowsExecutor) ExecuteStreamWithTimeout(command string, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
 	//TODO implement me
+	panic("implement me")
+}
+
+func (e WindowsExecutor) ExecuteTTY(command string) error {
 	panic("implement me")
 }

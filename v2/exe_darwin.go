@@ -5,7 +5,7 @@ func NewExecutor(env []string) Executor {
 }
 
 func NewExecutorAsUser(user string, env []string) Executor {
-	return &LinuxExecutor{
+	return &DarwinExecutor{
 		Environment: env,
 		User:        user,
 	}
