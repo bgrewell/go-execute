@@ -1,7 +1,11 @@
 package v2
 
 import (
+	"context"
+	"github.com/BGrewell/go-execute/internal/utilities"
 	"io"
+	"os"
+	"os/exec"
 	"time"
 )
 
@@ -22,42 +26,44 @@ type WindowsExecutor struct {
 }
 
 func (e WindowsExecutor) Execute(command string) (combined string, err error) {
-	//TODO implement me
-	panic("implement me")
+	return e.ExecuteWithTimeout(command, 0)
 }
 
 func (e WindowsExecutor) ExecuteSeparate(command string) (stdout string, stderr string, err error) {
-	//TODO implement me
-	panic("implement me")
+	return e.ExecuteSeparateWithTimeout(command, 0)
 }
 
 func (e WindowsExecutor) ExecuteStream(command string) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	//TODO implement me
-	panic("implement me")
+	return e.ExecuteStreamWithTimeout(command, 0)
 }
 
-func (e WindowsExecutor) ExecuteStreamWithInput(command string, stdin io.WriteCloser) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	//TODO implement me
-	panic("implement me")
+func (e WindowsExecutor) ExecuteStreamWithInput(command string, stdin io.ReadCloser) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
+	return e.execute(command, stdin, 0)
 }
 
 func (e WindowsExecutor) ExecuteWithTimeout(command string, timeout time.Duration) (combined string, err error) {
-	//TODO implement me
-	panic("implement me")
+	sout, serr, err := e.ExecuteSeparateWithTimeout(command, timeout)
+	return sout + serr, err
 }
 
 func (e WindowsExecutor) ExecuteSeparateWithTimeout(command string, timeout time.Duration) (stdout string, stderr string, err error) {
-	//TODO implement me
-	panic("implement me")
+	sout, serr, err := e.execute(command, nil, timeout)
+	if err != nil {
+		return "", "", err
+	}
+
+	outBytes, _ := io.ReadAll(sout)
+	errBytes, _ := io.ReadAll(serr)
+
+	return string(outBytes), string(errBytes), nil
 }
 
 func (e WindowsExecutor) ExecuteStreamWithTimeout(command string, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	//TODO implement me
-	panic("implement me")
+	return e.execute(command, nil, timeout)
 }
 
-func (e WindowsExecutor) ExecuteTTY(command string, timeout time.Duration) error {
-	exe, cancel, err := e.prepareCommandWindows(command, os.Stdin, timeout)
+func (e WindowsExecutor) ExecuteTTY(command string) error {
+	exe, cancel, err := e.prepareCommand(command, os.Stdin, 0)
 	if err != nil {
 		return err
 	}
@@ -78,6 +84,7 @@ func (e WindowsExecutor) ExecuteTTY(command string, timeout time.Duration) error
 	return exe.Wait()
 }
 
+// execute contains Windows specific execution code which is called from the various public methods
 func (e WindowsExecutor) execute(command string, stdin io.ReadCloser, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
 	exe, cancel, err := e.prepareCommand(command, stdin, timeout)
 	if err != nil {
@@ -111,6 +118,7 @@ func (e WindowsExecutor) execute(command string, stdin io.ReadCloser, timeout ti
 	return stdout, stderr, nil
 }
 
+// prepareCommand contains Windows specific command execution prep which is called from the various public methods
 func (e WindowsExecutor) prepareCommand(command string, stdin io.ReadCloser, timeout time.Duration) (*exec.Cmd, context.CancelFunc, error) {
 	ctx := context.Background()
 	var cancel context.CancelFunc
@@ -119,7 +127,7 @@ func (e WindowsExecutor) prepareCommand(command string, stdin io.ReadCloser, tim
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 	}
 
-	cmdParts, err := utilities.Fields(command) // Assuming utilities.Fields breaks the command string into parts
+	cmdParts, err := utilities.Fields(command)
 	if err != nil {
 		return nil, cancel, err
 	}
