@@ -6,58 +6,39 @@ import (
 	"errors"
 	"fmt"
 	"github.com/BGrewell/go-conversions"
+	"io"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 )
 
-var (
-	Debug = false
-)
-
-//TODO: This needs to be all cleaned up
-//TODO: - Remove excessive duplication of code
-//TODO: - Allow env vars to be passed in most functions as pointer to []string
-
 func Pipeline(cmds ...*exec.Cmd) (pipeLineOutput, collectedStandardError []byte, pipeLineError error) {
-	// Require at least one command
 	if len(cmds) < 1 {
 		return nil, nil, nil
 	}
 
-	// Collect the output from the command(s)
-	var output bytes.Buffer
-	var stderr bytes.Buffer
-
-	last := len(cmds) - 1
-	for i, cmd := range cmds[:last] {
-		var err error
-		// Connect each command's stdin to the previous command's stdout
-		if cmds[i+1].Stdin, err = cmd.StdoutPipe(); err != nil {
-			return nil, nil, err
+	var output, stderr bytes.Buffer
+	for i, cmd := range cmds {
+		if i < len(cmds)-1 {
+			if cmds[i+1].Stdin, pipeLineError = cmd.StdoutPipe(); pipeLineError != nil {
+				return nil, nil, pipeLineError
+			}
+		} else {
+			cmd.Stdout = &output
 		}
-		// Connect each command's stderr to a buffer
 		cmd.Stderr = &stderr
-	}
-
-	// Connect the output and error for the last command
-	cmds[last].Stdout, cmds[last].Stderr = &output, &stderr
-
-	// Start each command
-	for _, cmd := range cmds {
-		if err := cmd.Start(); err != nil {
-			return output.Bytes(), stderr.Bytes(), err
+		if pipeLineError = cmd.Start(); pipeLineError != nil {
+			return output.Bytes(), stderr.Bytes(), pipeLineError
 		}
 	}
 
-	// Wait for each command to complete
 	for _, cmd := range cmds {
-		if err := cmd.Wait(); err != nil {
-			return output.Bytes(), stderr.Bytes(), err
+		if pipeLineError = cmd.Wait(); pipeLineError != nil {
+			return output.Bytes(), stderr.Bytes(), pipeLineError
 		}
 	}
 
-	// Return the pipeline output and the collected standard error
 	return output.Bytes(), stderr.Bytes(), nil
 }
 
@@ -65,21 +46,13 @@ func ExecutePipedCmds(commands []string) (output string, err error) {
 	if len(commands) < 2 {
 		return "", fmt.Errorf("you must pass 2 or more commands to pipe them")
 	}
+
 	cmds := make([]*exec.Cmd, len(commands))
-	for idx := 0; idx < len(commands); idx++ {
-		// break the command into it's fields
-		fmt.Println("cmd: " + commands[idx])
-		cmdParts, err := Fields(commands[idx])
+	for idx, command := range commands {
+		cmds[idx], err = prepareCommand(command)
 		if err != nil {
 			return "", err
 		}
-		exe, err := exec.LookPath(cmdParts[0])
-		if err != nil {
-			return "", err
-		}
-		// setup execution
-		cmd := exec.Command(exe, cmdParts[1:]...)
-		cmds[idx] = cmd
 	}
 
 	bytesout, stderr, err := Pipeline(cmds...)
@@ -104,12 +77,10 @@ func ExecuteCmds(commands []string) (outputs []string, errs []error) {
 
 // ExecuteCmd executes commands and returns the output and any errors
 func ExecuteCmd(command string) (output string, err error) {
-	cmdParts, err := Fields(command)
+	exe, err := prepareCommand(command)
 	if err != nil {
 		return "", err
 	}
-	exename, err := exec.LookPath(cmdParts[0])
-	exe := exec.Command(exename, cmdParts[1:]...)
 	out, err := exe.CombinedOutput()
 	return string(out), err
 }
@@ -117,12 +88,10 @@ func ExecuteCmd(command string) (output string, err error) {
 // ExecuteCmdEx executes commands and returns the stdout and stderr as separate strings
 func ExecuteCmdEx(command string) (stdout string, stderr string, err error) {
 	var bout, berr bytes.Buffer
-	cmdParts, err := Fields(command)
+	exe, err := prepareCommand(command)
 	if err != nil {
 		return "", "", err
 	}
-	exename, err := exec.LookPath(cmdParts[0])
-	exe := exec.Command(exename, cmdParts[1:]...)
 	exe.Stdout = &bout
 	exe.Stderr = &berr
 	err = exe.Run()
@@ -132,12 +101,10 @@ func ExecuteCmdEx(command string) (stdout string, stderr string, err error) {
 // ExecuteCmdWithEnvVars executes a command with the passed in env vars set and returns the results
 func ExecuteCmdWithEnvVars(command string, vars []string) (stdout string, stderr string, err error) {
 	var bout, berr bytes.Buffer
-	cmdParts, err := Fields(command)
+	exe, err := prepareCommand(command)
 	if err != nil {
 		return "", "", err
 	}
-	exename, err := exec.LookPath(cmdParts[0])
-	exe := exec.Command(exename, cmdParts[1:]...)
 	exe.Env = os.Environ()
 	exe.Env = append(exe.Env, vars...)
 	exe.Stdout = &bout
@@ -150,12 +117,13 @@ func ExecuteCmdWithEnvVars(command string, vars []string) (stdout string, stderr
 func ExecuteCmdWithTimeout(command string, seconds int) (output string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
 	defer cancel()
-	cmdParts, err := Fields(command)
+
+	exe, err := prepareCommand(command)
 	if err != nil {
 		return "", err
 	}
-	exename, err := exec.LookPath(cmdParts[0])
-	outBytes, err := exec.CommandContext(ctx, exename, cmdParts[1:]...).Output()
+
+	outBytes, err := exec.CommandContext(ctx, exe.Path, exe.Args[1:]...).Output()
 	if ctx.Err() == context.DeadlineExceeded {
 		err = errors.New("command execution timeout exceeded")
 	}
@@ -164,18 +132,61 @@ func ExecuteCmdWithTimeout(command string, seconds int) (output string, err erro
 
 // ExecutePowershell executes a command using powershell and returns the stdout, stderr and any error code
 func ExecutePowershell(command string) (stdout string, stderr string, err error) {
-	//command = strings.ReplaceAll(command,"\"", "\\\"")
-	//command = strings.ReplaceAll(command, "'", "\\'")
-	//command = fmt.Sprintf("'%s'", command)
 	encCommand := conversions.ConvertToUTF16LEBase64String(command)
-	if Debug {
-		fmt.Println(encCommand)
-	}
+
 	var bout, berr bytes.Buffer
-	exename, err := exec.LookPath("powershell.exe")
-	exe := exec.Command(exename, "-NoProfile", "-enc", encCommand)
+	exe := exec.Command("powershell.exe", "-NoProfile", "-enc", encCommand)
 	exe.Stdout = &bout
 	exe.Stderr = &berr
 	err = exe.Run()
+
 	return string(bout.Bytes()), string(berr.Bytes()), err
+}
+
+func ExecuteAsync(command string, env *[]string) (outPipe io.ReadCloser, errPipe io.ReadCloser, exitCode chan int, err error) {
+	stdout, stderr, exitCode, _, err := ExecuteAsyncWithCancel(command, env)
+	return stdout, stderr, exitCode, err
+}
+
+func ExecuteAsyncWithCancel(command string, env *[]string) (stdOut io.ReadCloser, stdErr io.ReadCloser, exitCode chan int, cancelToken context.CancelFunc, err error) {
+	exitCode = make(chan int)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cmd, err := prepareCommand(command)
+	if err != nil {
+		cancel()
+		return nil, nil, nil, nil, err
+	}
+	exe := exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
+	exe.Env = os.Environ()
+	if env != nil {
+		exe.Env = append(exe.Env, *env...)
+	}
+	stdOut, err = exe.StdoutPipe()
+	if err != nil {
+		defer cancel()
+		return nil, nil, nil, nil, err
+	}
+	stdErr, err = exe.StderrPipe()
+	if err != nil {
+		defer cancel()
+		return nil, nil, nil, nil, err
+	}
+	err = exe.Start()
+	if err != nil {
+		defer cancel()
+		return nil, nil, nil, nil, err
+	}
+	go func() {
+		if err := exe.Wait(); err != nil {
+			if exiterr, ok := err.(*exec.ExitError); ok {
+				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+					exitCode <- status.ExitStatus()
+				}
+			}
+		} else {
+			exitCode <- 0
+		}
+	}()
+	return stdOut, stdErr, exitCode, cancel, nil
 }
