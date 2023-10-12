@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+const (
+	SE_ASSIGNPRIMARYTOKEN_NAME = "SeAssignPrimaryTokenPrivilege"
+	SE_INCREASE_QUOTA_NAME     = "SeIncreaseQuotaPrivilege"
+)
+
 func NewExecutor(env []string) Executor {
 	return NewExecutorAsUser("", env)
 }
@@ -134,10 +139,61 @@ func (e WindowsExecutor) prepareCommand(command string, stdin io.ReadCloser, tim
 	exe.Env = e.Environment
 
 	if e.User != "" {
-		// This part will be more complex on Windows and may involve direct syscall
-		// operations or third-party libraries to support user-based execution.
-		// For now, let's leave it as a placeholder.
+		// Check if the current process has the required privileges
+		hasPrivileges, err := hasRequiredPrivileges()
+		if err != nil {
+			cancel()
+			return nil, nil, err
+		}
+
+		// Check if the target user exists on the system
+		sid, err := lookupAccount(e.User)
+		if err != nil {
+			cancel()
+			return nil, nil, err
+		}
 	}
 
 	return exe, cancel, nil
+}
+
+func hasRequiredPrivileges() (bool, error) {
+	var hToken syscall.Token
+	err := syscall.OpenProcessToken(syscall.CurrentProcess(), syscall.TOKEN_QUERY, &hToken)
+	if err != nil {
+		return false, err
+	}
+	defer syscall.CloseHandle(hToken)
+
+	tokenPrivs, err := hToken.GetTokenPrivileges()
+	if err != nil {
+		return false, err
+	}
+
+	hasAssignPrimaryToken := false
+	hasIncreaseQuota := false
+	for _, priv := range tokenPrivs {
+		name, err := priv.Name()
+		if err != nil {
+			continue
+		}
+		if name == SE_ASSIGNPRIMARYTOKEN_NAME {
+			hasAssignPrimaryToken = true
+		}
+		if name == SE_INCREASE_QUOTA_NAME {
+			hasIncreaseQuota = true
+		}
+	}
+
+	return hasAssignPrimaryToken && hasIncreaseQuota, nil
+}
+
+func lookupAccount(username string) (*syscall.SID, error) {
+	// Use the LookupAccountName syscall to verify the user exists
+	var sid *syscall.SID
+	var domain *uint16
+	var size uint32
+	var peUse uint32
+	err := syscall.LookupAccountName(nil, syscall.StringToUTF16Ptr(username), sid, &size, &domain, &size, &peUse)
+	return sid, err
 }
