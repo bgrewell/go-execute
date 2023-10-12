@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/BGrewell/go-conversions"
+	"github.com/BGrewell/go-execute/internal/utilities"
 	"io"
 	"os"
 	"os/exec"
@@ -189,4 +190,20 @@ func ExecuteAsyncWithCancel(command string, env *[]string) (stdOut io.ReadCloser
 		}
 	}()
 	return stdOut, stdErr, exitCode, cancel, nil
+}
+
+func prepareCommand(command string) (*exec.Cmd, error) {
+
+	cmdParts, err := utilities.Fields(command) // Assuming utilities.Fields breaks the command string into parts
+	if err != nil {
+		return nil, err
+	}
+
+	binary, err := exec.LookPath(cmdParts[0])
+	if err != nil {
+		return nil, err
+	}
+
+	exe := exec.Command(binary, cmdParts[1:]...)
+	return exe, nil
 }
