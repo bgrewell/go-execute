@@ -2,16 +2,16 @@ package v2
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"github.com/BGrewell/go-execute/internal/utilities"
+	"github.com/shirou/gopsutil/v3/process"
+	"golang.org/x/sys/windows"
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
-)
-
-const (
-	SE_ASSIGNPRIMARYTOKEN_NAME = "SeAssignPrimaryTokenPrivilege"
-	SE_INCREASE_QUOTA_NAME     = "SeIncreaseQuotaPrivilege"
 )
 
 func NewExecutor(env []string) Executor {
@@ -128,6 +128,14 @@ func (e WindowsExecutor) prepareCommand(command string, stdin io.ReadCloser, tim
 	ctx := context.Background()
 	var cancel context.CancelFunc
 
+	// Helper function
+	cf := func(err error) (*exec.Cmd, context.CancelFunc, error) {
+		if cancel != nil {
+			cancel()
+		}
+		return nil, nil, err
+	}
+
 	if timeout != 0 {
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 	}
@@ -148,60 +156,99 @@ func (e WindowsExecutor) prepareCommand(command string, stdin io.ReadCloser, tim
 
 	if e.User != "" {
 		// Check if the current process has the required privileges
-		hasPrivileges, err := hasRequiredPrivileges()
+		isAdmin := runningAsAdmin()
 		if err != nil {
-			cancel()
-			return nil, nil, err
+			return cf(err)
+		}
+		fmt.Printf("IsAdmin: %v\n", isAdmin)
+
+		// Try to find a process running as the target user
+		pid := int32(0)
+		processes, _ := process.Processes()
+		for _, process := range processes {
+			username, _ := process.Username()
+			if username == e.User {
+				pid = process.Pid
+				break
+			}
+		}
+		if pid == 0 {
+			return cf(errors.New("unable to find process running as target user"))
 		}
 
-		// Check if the target user exists on the system
-		sid, err := lookupAccount(e.User)
+		token, err := getTokenFromPid(pid)
 		if err != nil {
-			cancel()
-			return nil, nil, err
+			return cf(err)
+		}
+
+		exe.SysProcAttr = &syscall.SysProcAttr{
+			Token: token,
 		}
 	}
 
 	return exe, cancel, nil
 }
 
-func hasRequiredPrivileges() (bool, error) {
-	var hToken syscall.Token
-	err := syscall.OpenProcessToken(syscall.CurrentProcess(), syscall.TOKEN_QUERY, &hToken)
+func hasRequiredPrivileges() (admin bool, elevated bool, err error) {
+	var sid *windows.SID
+
+	err = windows.AllocateAndInitializeSid(
+		&windows.SECURITY_NT_AUTHORITY,
+		2,
+		windows.SECURITY_BUILTIN_DOMAIN_RID,
+		windows.DOMAIN_ALIAS_RID_ADMINS,
+		0, 0, 0, 0, 0, 0,
+		&sid)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	defer syscall.CloseHandle(hToken)
+	defer windows.FreeSid(sid)
 
-	tokenPrivs, err := hToken.GetTokenPrivileges()
+	// Get the token for the active thread
+	token := windows.Token(0)
+
+	isAdmin, err := token.IsMember(sid)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 
-	hasAssignPrimaryToken := false
-	hasIncreaseQuota := false
-	for _, priv := range tokenPrivs {
-		name, err := priv.Name()
-		if err != nil {
-			continue
-		}
-		if name == SE_ASSIGNPRIMARYTOKEN_NAME {
-			hasAssignPrimaryToken = true
-		}
-		if name == SE_INCREASE_QUOTA_NAME {
-			hasIncreaseQuota = true
-		}
-	}
+	return isAdmin, token.IsElevated(), nil
+}
 
-	return hasAssignPrimaryToken && hasIncreaseQuota, nil
+func runningAsAdmin() (isAdmin bool) {
+	// Check to see if we are running with the right permissions
+	_, err := os.Open("\\\\.\\PHYSICALDRIVE0")
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 func lookupAccount(username string) (*syscall.SID, error) {
 	// Use the LookupAccountName syscall to verify the user exists
 	var sid *syscall.SID
-	var domain *uint16
+	var domain uint16
 	var size uint32
 	var peUse uint32
 	err := syscall.LookupAccountName(nil, syscall.StringToUTF16Ptr(username), sid, &size, &domain, &size, &peUse)
 	return sid, err
+}
+
+func getTokenFromPid(pid int32) (syscall.Token, error) {
+	var err error
+	var token syscall.Token
+
+	handle, err := syscall.OpenProcess(syscall.PROCESS_QUERY_INFORMATION, false, uint32(pid))
+	if err != nil {
+		fmt.Println("Token Process", "err", err)
+	}
+	defer syscall.CloseHandle(handle)
+
+	// Find process token via win32
+	err = syscall.OpenProcessToken(handle, syscall.TOKEN_ALL_ACCESS, &token)
+
+	if err != nil {
+		fmt.Println("Open Token Process", "err", err)
+	}
+	return token, err
 }
