@@ -98,7 +98,7 @@ func (e LinuxExecutor) ExecuteTTY(command string) error {
 }
 
 func (e LinuxExecutor) execute(command string, stdin io.ReadCloser, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	exe, cancel, err := e.prepareCommand(command, stdin, timeout)
+	exe, ctx, cancel, err := e.prepareCommand(command, stdin, timeout)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -123,14 +123,22 @@ func (e LinuxExecutor) execute(command string, stdin io.ReadCloser, timeout time
 		return nil, nil, err
 	}
 
+	// Wait for the command to complete or for the timeout
+	done := make(chan error, 1)
 	go func() {
-		_ = exe.Wait()
+		done <- exe.Wait()
 	}()
 
-	return stdout, stderr, nil
+	// Wait for completion or timeout
+	select {
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	case err := <-done:
+		return stdout, stderr, err
+	}
 }
 
-func (e LinuxExecutor) prepareCommand(command string, stdin io.ReadCloser, timeout time.Duration) (*exec.Cmd, context.CancelFunc, error) {
+func (e LinuxExecutor) prepareCommand(command string, stdin io.ReadCloser, timeout time.Duration) (*exec.Cmd, context.Context, context.CancelFunc, error) {
 	ctx := context.Background()
 	var cancel context.CancelFunc
 
@@ -140,12 +148,12 @@ func (e LinuxExecutor) prepareCommand(command string, stdin io.ReadCloser, timeo
 
 	cmdParts, err := utilities.Fields(command) // Assuming utilities.Fields breaks the command string into parts
 	if err != nil {
-		return nil, cancel, err
+		return nil, ctx, cancel, err
 	}
 
 	binary, err := exec.LookPath(cmdParts[0])
 	if err != nil {
-		return nil, cancel, err
+		return nil, ctx, cancel, err
 	}
 
 	exe := exec.CommandContext(ctx, binary, cmdParts[1:]...)
@@ -155,17 +163,17 @@ func (e LinuxExecutor) prepareCommand(command string, stdin io.ReadCloser, timeo
 	if e.User != "" {
 		u, err := user.Lookup(e.User)
 		if err != nil {
-			return nil, cancel, err
+			return nil, ctx, cancel, err
 		}
 
 		uid, err := strconv.Atoi(u.Uid)
 		if err != nil {
-			return nil, cancel, err
+			return nil, ctx, cancel, err
 		}
 
 		gid, err := strconv.Atoi(u.Gid)
 		if err != nil {
-			return nil, cancel, err
+			return nil, ctx, cancel, err
 		}
 
 		exe.SysProcAttr = &syscall.SysProcAttr{
@@ -173,5 +181,5 @@ func (e LinuxExecutor) prepareCommand(command string, stdin io.ReadCloser, timeo
 		}
 	}
 
-	return exe, cancel, nil
+	return exe, ctx, cancel, nil
 }
