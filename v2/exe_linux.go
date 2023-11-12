@@ -12,7 +12,11 @@ import (
 	"time"
 )
 
-func NewExecutor(env []string) Executor {
+func NewExecutor() Executor {
+	return NewExecutorAsUser("", os.Environ())
+}
+
+func NewExecutorWithEnv(env []string) Executor {
 	return NewExecutorAsUser("", env)
 }
 
@@ -55,8 +59,14 @@ func (e LinuxExecutor) ExecuteSeparateWithTimeout(command string, timeout time.D
 		return "", "", err
 	}
 
-	outBytes, _ := io.ReadAll(sout)
-	errBytes, _ := io.ReadAll(serr)
+	outBytes, err := io.ReadAll(sout)
+	if err != nil {
+		return "", "", err
+	}
+	errBytes, err := io.ReadAll(serr)
+	if err != nil {
+		return "", "", err
+	}
 
 	return string(outBytes), string(errBytes), nil
 }
