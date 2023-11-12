@@ -1,6 +1,7 @@
 package v2
 
 import (
+	"bytes"
 	"context"
 	"github.com/BGrewell/go-execute/internal/utilities"
 	"io"
@@ -118,6 +119,13 @@ func (e LinuxExecutor) execute(command string, stdin io.ReadCloser, timeout time
 		return nil, nil, err
 	}
 
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdoutDone := make(chan struct{})
+	stderrDone := make(chan struct{})
+
+	go copyAndClose(stdoutDone, &stdoutBuf, stdout)
+	go copyAndClose(stderrDone, &stderrBuf, stderr)
+
 	err = exe.Start()
 	if err != nil {
 		return nil, nil, err
@@ -134,7 +142,7 @@ func (e LinuxExecutor) execute(command string, stdin io.ReadCloser, timeout time
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 	case err := <-done:
-		return stdout, stderr, err
+		return io.NopCloser(bytes.NewReader(stdoutBuf.Bytes())), io.NopCloser(bytes.NewReader(stderrBuf.Bytes())), err
 	}
 }
 
@@ -182,4 +190,10 @@ func (e LinuxExecutor) prepareCommand(command string, stdin io.ReadCloser, timeo
 	}
 
 	return exe, ctx, cancel, nil
+}
+
+func copyAndClose(done chan struct{}, buf *bytes.Buffer, r io.ReadCloser) {
+	defer close(done)
+	defer r.Close()
+	io.Copy(buf, r)
 }
