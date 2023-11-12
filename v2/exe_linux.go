@@ -76,7 +76,7 @@ func (e LinuxExecutor) ExecuteStreamWithTimeout(command string, timeout time.Dur
 }
 
 func (e LinuxExecutor) ExecuteTTY(command string) error {
-	exe, cancel, err := e.prepareCommand(command, os.Stdin, 0)
+	exe, _, cancel, err := e.prepareCommand(command, os.Stdin, 0)
 	if err != nil {
 		return err
 	}
