@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 )
 
@@ -178,27 +179,18 @@ func ExecuteAsyncWithCancel(command string, env *[]string) (stdOut io.ReadCloser
 		return nil, nil, nil, nil, err
 	}
 
-	var stdoutBuf, stderrBuf bytes.Buffer
-	stdoutDone := make(chan struct{})
-	stderrDone := make(chan struct{})
-
-	go copyAndClose(stdoutDone, &stdoutBuf, stdOut)
-	go copyAndClose(stderrDone, &stderrBuf, stdErr)
-
-	// Wait for the command to complete or for the timeout
-	done := make(chan error, 1)
 	go func() {
-		done <- exe.Wait()
+		if err := exe.Wait(); err != nil {
+			if exiterr, ok := err.(*exec.ExitError); ok {
+				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+					exitCode <- status.ExitStatus()
+				}
+			}
+		} else {
+			exitCode <- 0
+		}
 	}()
-
-	// Wait for completion or timeout
-	select {
-	case <-ctx.Done():
-		defer cancel()
-		return nil, nil, exitCode, nil, ctx.Err()
-	case err := <-done:
-		return io.NopCloser(bytes.NewReader(stdoutBuf.Bytes())), io.NopCloser(bytes.NewReader(stderrBuf.Bytes())), exitCode, cancel, err
-	}
+	return stdOut, stdErr, exitCode, cancel, nil
 }
 
 func prepareCommand(command string) (*exec.Cmd, error) {
@@ -215,10 +207,4 @@ func prepareCommand(command string) (*exec.Cmd, error) {
 
 	exe := exec.Command(binary, cmdParts[1:]...)
 	return exe, nil
-}
-
-func copyAndClose(done chan struct{}, buf *bytes.Buffer, r io.ReadCloser) {
-	defer close(done)
-	defer r.Close()
-	io.Copy(buf, r)
 }
