@@ -190,6 +190,7 @@ func ExecuteAsyncWithCancel(command string, env *[]string) (stdOut io.ReadCloser
 			exitCode <- 0
 		}
 	}()
+
 	return stdOut, stdErr, exitCode, cancel, nil
 }
 
