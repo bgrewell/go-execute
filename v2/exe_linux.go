@@ -41,12 +41,16 @@ func (e LinuxExecutor) ExecuteSeparate(command string) (stdout string, stderr st
 	return e.ExecuteSeparateWithTimeout(command, 0)
 }
 
-func (e LinuxExecutor) ExecuteStream(command string) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.ExecuteStreamWithTimeout(command, 0)
+func (e LinuxExecutor) ExecuteAsync(command string) (*ExecutionResult, error) {
+	return e.ExecuteAsyncWithTimeout(command, 0)
 }
 
-func (e LinuxExecutor) ExecuteStreamWithInput(command string, stdin io.ReadCloser) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.execute(command, stdin, 0)
+func (e LinuxExecutor) ExecuteAsyncWithInput(command string, stdin io.ReadCloser) (*ExecutionResult, error) {
+	return e.executeAsync(command, stdin, 0)
+}
+
+func (e LinuxExecutor) ExecuteAsyncWithTimeout(command string, timeout time.Duration) (*ExecutionResult, error) {
+	return e.executeAsync(command, nil, timeout)
 }
 
 func (e LinuxExecutor) ExecuteWithTimeout(command string, timeout time.Duration) (combined string, err error) {
@@ -70,10 +74,6 @@ func (e LinuxExecutor) ExecuteSeparateWithTimeout(command string, timeout time.D
 	}
 
 	return string(outBytes), string(errBytes), nil
-}
-
-func (e LinuxExecutor) ExecuteStreamWithTimeout(command string, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.execute(command, nil, timeout)
 }
 
 func (e LinuxExecutor) ExecuteTTY(command string) error {
