@@ -98,52 +98,74 @@ func (e LinuxExecutor) ExecuteTTY(command string) error {
 	return exe.Wait()
 }
 
-func (e LinuxExecutor) execute(command string, stdin io.ReadCloser, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	exe, ctx, cancel, err := e.prepareCommand(command, stdin, timeout)
+func (e LinuxExecutor) execute(command string, stdin io.ReadCloser, timeout time.Duration) (io.ReadCloser, io.ReadCloser, error) {
+	execResult, err := e.executeAsync(command, stdin, timeout)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer func() {
+
+	// Wait for completion or timeout using the context from execResult
+	select {
+	case err := <-execResult.Finished:
+		return io.NopCloser(bytes.NewReader(execResult.Stdout.(*bytes.Buffer).Bytes())),
+			io.NopCloser(bytes.NewReader(execResult.Stderr.(*bytes.Buffer).Bytes())),
+			err
+	case <-execResult.Ctx.Done():
+		return nil, nil, execResult.Ctx.Err()
+	}
+}
+
+// executeAsync starts the command asynchronously and returns access to stdout, stderr, and a completion channel.
+func (e LinuxExecutor) executeAsync(command string, stdin io.ReadCloser, timeout time.Duration) (*ExecutionResult, error) {
+	exe, ctx, cancel, err := e.prepareCommand(command, stdin, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	// Setting up stdout and stderr
+	stdoutPipe, err := exe.StdoutPipe()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	stderrPipe, err := exe.StderrPipe()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	// Buffering stdout and stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdoutDone := make(chan struct{})
+	stderrDone := make(chan struct{})
+
+	go copyAndClose(stdoutDone, &stdoutBuf, stdoutPipe)
+	go copyAndClose(stderrDone, &stderrBuf, stderrPipe)
+
+	// Starting the command asynchronously
+	err = exe.Start()
+	if err != nil {
+		if cancel != nil {
+			cancel()
+		}
+		return nil, err
+	}
+
+	finished := make(chan error)
+	go func() {
+		defer close(finished)
+		finished <- exe.Wait()
 		if cancel != nil {
 			cancel()
 		}
 	}()
 
-	stdout, err = exe.StdoutPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	stderr, err = exe.StderrPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	stdoutDone := make(chan struct{})
-	stderrDone := make(chan struct{})
-
-	go copyAndClose(stdoutDone, &stdoutBuf, stdout)
-	go copyAndClose(stderrDone, &stderrBuf, stderr)
-
-	err = exe.Start()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Wait for the command to complete or for the timeout
-	done := make(chan error, 1)
-	go func() {
-		done <- exe.Wait()
-	}()
-
-	// Wait for completion or timeout
-	select {
-	case <-ctx.Done():
-		return nil, nil, ctx.Err()
-	case err := <-done:
-		return io.NopCloser(bytes.NewReader(stdoutBuf.Bytes())), io.NopCloser(bytes.NewReader(stderrBuf.Bytes())), err
-	}
+	return &ExecutionResult{
+		Stdout:   &stdoutBuf,
+		Stderr:   &stderrBuf,
+		Finished: finished,
+		Ctx:      ctx,
+	}, nil
 }
 
 func (e LinuxExecutor) prepareCommand(command string, stdin io.ReadCloser, timeout time.Duration) (*exec.Cmd, context.Context, context.CancelFunc, error) {
