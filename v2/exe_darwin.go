@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-func NewExecutor(env []string) Executor {
+func NewExecutor() Executor {
 	return NewExecutorAsUser("", os.Environ())
 }
 
