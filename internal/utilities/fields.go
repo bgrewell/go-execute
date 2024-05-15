@@ -30,7 +30,7 @@ func Fields(s string) ([]string, error) {
 // parseArguments uses a CSV reader to parse the string using a space as a delimiter.
 func parseArguments(input string) ([]string, error) {
 	if input == "" {
-		return []string, nil
+		return []string{}, nil
 	}
 	r := csv.NewReader(strings.NewReader(input))
 	r.Comma = ' '
