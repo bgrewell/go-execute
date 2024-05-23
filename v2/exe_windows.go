@@ -14,6 +14,17 @@ import (
 	"time"
 )
 
+func NewWindowsExecutor(env []string) *WindowsExecutor {
+	return NewWindowsExecutorAsUser("", env)
+}
+
+func NewWindowsExecutorAsUser(user string, env []string) {
+	return &WindowsExecutor{
+		Environment: env,
+		User:       user,
+	}
+}
+
 func NewExecutor(env []string) Executor {
 	return NewExecutorAsUser("", env)
 }
