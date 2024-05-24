@@ -42,12 +42,16 @@ func (e WindowsExecutor) ExecuteSeparate(command string) (stdout string, stderr 
 	return e.ExecuteSeparateWithTimeout(command, 0)
 }
 
-func (e WindowsExecutor) ExecuteStream(command string) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.ExecuteStreamWithTimeout(command, 0)
+func (e WindowsExecutor) ExecuteAsync(command string) (*ExecutionResult, error) {
+	return e.ExecuteAsyncWithTimeout(command, 0)
 }
 
-func (e WindowsExecutor) ExecuteStreamWithInput(command string, stdin io.ReadCloser) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.execute(command, stdin, 0)
+func (e WindowsExecutor) ExecuteAsyncWithInput(command string, stdin io.ReadCloser) (*ExecutionResult, error) {
+	return e.executeAsync(command, stdin, 0)
+}
+
+func (e WindowsExecutor) ExecuteAsyncWithTimeout(command string, timeout time.Duration) (*ExecutionResult, error) {
+	return e.executeAsync(command, nil, timeout)
 }
 
 func (e WindowsExecutor) ExecuteWithTimeout(command string, timeout time.Duration) (combined string, err error) {
@@ -61,14 +65,16 @@ func (e WindowsExecutor) ExecuteSeparateWithTimeout(command string, timeout time
 		return "", "", err
 	}
 
-	outBytes, _ := io.ReadAll(sout)
-	errBytes, _ := io.ReadAll(serr)
+	outBytes, err := io.ReadAll(sout)
+	if err != nil {
+		return "", "", err
+	}
+	errBytes, err := io.ReadAll(serr)
+	if err != nil {
+		return "", "", err
+	}
 
 	return string(outBytes), string(errBytes), nil
-}
-
-func (e WindowsExecutor) ExecuteStreamWithTimeout(command string, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.execute(command, nil, timeout)
 }
 
 func (e WindowsExecutor) ExecuteTTY(command string) error {
@@ -139,6 +145,58 @@ func (e WindowsExecutor) execute(command string, stdin io.ReadCloser, timeout ti
 	case err := <-done:
 		return io.NopCloser(bytes.NewReader(stdoutBuf.Bytes())), io.NopCloser(bytes.NewReader(stderrBuf.Bytes())), err
 	}
+}
+
+func (e WindowsExecutor) executeAsync(command string, stdin io.ReadCloser, timeout time.Duration) (*ExecutionResult, error) {
+	exe, ctx, cancel, err := e.prepareCommand(command, stdin, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	// Setting up stdout and stderr
+	stdoutPipe, err := exe.StdoutPipe()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	stderrPipe, err := exe.StderrPipe()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	// Buffering stdout and stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdoutDone := make(chan struct{})
+	stderrDone := make(chan struct{})
+
+	go utilities.CopyAndClose(stdoutDone, &stdoutBuf, stdoutPipe)
+	go utilities.CopyAndClose(stderrDone, &stderrBuf, stderrPipe)
+
+	// Starting the command asynchronously
+	err = exe.Start()
+	if err != nil {
+		if cancel != nil {
+			cancel()
+		}
+		return nil, err
+	}
+
+	finished := make(chan error)
+	go func() {
+		defer close(finished)
+		finished <- exe.Wait()
+		if cancel != nil {
+			cancel()
+		}
+	}()
+
+	return &ExecutionResult{
+		Stdout:   &stdoutBuf,
+		Stderr:   &stderrBuf,
+		Finished: finished,
+		Ctx:      ctx,
+	}, nil
 }
 
 func (e WindowsExecutor) prepareCommand(command string, stdin io.ReadCloser, timeout time.Duration) (*exec.Cmd, context.Context, context.CancelFunc, error) {

@@ -8,6 +8,7 @@ import (
 	"github.com/bgrewell/go-execute/v2/internal/utilities"
 	"github.com/shirou/gopsutil/v3/process"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"syscall"
@@ -61,10 +62,30 @@ func (e PowerShellExecutor) ExecuteSeparateWithTimeout(command string, timeout t
 }
 
 func (e PowerShellExecutor) ExecuteScript(script string, parameters map[string]string) (string, error) {
-	command := "powershell -NoProfile -NonInteractive -Command " + script
+	// Create a temporary file to hold the PowerShell script
+	tmpFile, err := ioutil.TempFile("", "*.ps1")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	// Write the script content to the temporary file
+	if _, err := tmpFile.Write([]byte(script)); err != nil {
+		return "", fmt.Errorf("failed to write script to temp file: %w", err)
+	}
+
+	// Close the temporary file
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	// Construct the PowerShell command to execute the script
+	command := fmt.Sprintf("powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%s\"", tmpFile.Name())
 	for key, value := range parameters {
 		command += fmt.Sprintf(" -%s '%s'", key, value)
 	}
+
+	// Execute the constructed command
 	return e.Execute(command)
 }
 
@@ -176,17 +197,8 @@ func (e PowerShellExecutor) prepareCommand(command string, stdin io.ReadCloser, 
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 	}
 
-	cmdParts, err := utilities.Fields(command)
-	if err != nil {
-		return nil, ctx, cancel, err
-	}
-
-	binary, err := exec.LookPath(cmdParts[0])
-	if err != nil {
-		return nil, ctx, cancel, err
-	}
-
-	exe := exec.CommandContext(ctx, binary, cmdParts[1:]...)
+	// Use exec.CommandContext to run the PowerShell command
+	exe := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", command)
 	exe.Stdin = stdin
 	exe.Env = e.Environment
 
