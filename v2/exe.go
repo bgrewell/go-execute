@@ -1,6 +1,7 @@
 package execute
 
 import (
+	"context"
 	"io"
 	"time"
 )
@@ -8,10 +9,18 @@ import (
 type Executor interface {
 	Execute(command string) (combined string, err error)
 	ExecuteSeparate(command string) (stdout string, stderr string, err error)
-	ExecuteStream(command string) (stdout io.ReadCloser, stderr io.ReadCloser, err error)
-	ExecuteStreamWithInput(command string, stdin io.ReadCloser) (stdout io.ReadCloser, stderr io.ReadCloser, err error)
+	ExecuteAsync(command string) (result *ExecutionResult, err error)
+	ExecuteAsyncWithInput(command string, stdin io.ReadCloser) (result *ExecutionResult, err error)
 	ExecuteWithTimeout(command string, timeout time.Duration) (combined string, err error)
 	ExecuteSeparateWithTimeout(command string, timeout time.Duration) (stdout string, stderr string, err error)
-	ExecuteStreamWithTimeout(command string, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error)
+	ExecuteAsyncWithTimeout(command string, timeout time.Duration) (result *ExecutionResult, err error)
 	ExecuteTTY(command string) error
+}
+
+// ExecutionResult holds the necessary structures for interaction with the process.
+type ExecutionResult struct {
+	Stdout   io.Reader
+	Stderr   io.Reader
+	Finished <-chan error
+	Ctx      context.Context
 }

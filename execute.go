@@ -178,6 +178,7 @@ func ExecuteAsyncWithCancel(command string, env *[]string) (stdOut io.ReadCloser
 		defer cancel()
 		return nil, nil, nil, nil, err
 	}
+
 	go func() {
 		if err := exe.Wait(); err != nil {
 			if exiterr, ok := err.(*exec.ExitError); ok {
@@ -189,6 +190,7 @@ func ExecuteAsyncWithCancel(command string, env *[]string) (stdOut io.ReadCloser
 			exitCode <- 0
 		}
 	}()
+
 	return stdOut, stdErr, exitCode, cancel, nil
 }
 

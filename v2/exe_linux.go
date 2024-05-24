@@ -41,12 +41,16 @@ func (e LinuxExecutor) ExecuteSeparate(command string) (stdout string, stderr st
 	return e.ExecuteSeparateWithTimeout(command, 0)
 }
 
-func (e LinuxExecutor) ExecuteStream(command string) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.ExecuteStreamWithTimeout(command, 0)
+func (e LinuxExecutor) ExecuteAsync(command string) (*ExecutionResult, error) {
+	return e.ExecuteAsyncWithTimeout(command, 0)
 }
 
-func (e LinuxExecutor) ExecuteStreamWithInput(command string, stdin io.ReadCloser) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.execute(command, stdin, 0)
+func (e LinuxExecutor) ExecuteAsyncWithInput(command string, stdin io.ReadCloser) (*ExecutionResult, error) {
+	return e.executeAsync(command, stdin, 0)
+}
+
+func (e LinuxExecutor) ExecuteAsyncWithTimeout(command string, timeout time.Duration) (*ExecutionResult, error) {
+	return e.executeAsync(command, nil, timeout)
 }
 
 func (e LinuxExecutor) ExecuteWithTimeout(command string, timeout time.Duration) (combined string, err error) {
@@ -72,10 +76,6 @@ func (e LinuxExecutor) ExecuteSeparateWithTimeout(command string, timeout time.D
 	return string(outBytes), string(errBytes), nil
 }
 
-func (e LinuxExecutor) ExecuteStreamWithTimeout(command string, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.execute(command, nil, timeout)
-}
-
 func (e LinuxExecutor) ExecuteTTY(command string) error {
 	exe, _, cancel, err := e.prepareCommand(command, os.Stdin, 0)
 	if err != nil {
@@ -98,52 +98,73 @@ func (e LinuxExecutor) ExecuteTTY(command string) error {
 	return exe.Wait()
 }
 
-func (e LinuxExecutor) execute(command string, stdin io.ReadCloser, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	exe, ctx, cancel, err := e.prepareCommand(command, stdin, timeout)
+func (e LinuxExecutor) execute(command string, stdin io.ReadCloser, timeout time.Duration) (io.ReadCloser, io.ReadCloser, error) {
+	execResult, err := e.executeAsync(command, stdin, timeout)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer func() {
+
+	// Wait for completion or timeout using the context from execResult
+	select {
+	case err := <-execResult.Finished:
+		return io.NopCloser(bytes.NewReader(execResult.Stdout.(*bytes.Buffer).Bytes())),
+			io.NopCloser(bytes.NewReader(execResult.Stderr.(*bytes.Buffer).Bytes())),
+			err
+	case <-execResult.Ctx.Done():
+		return nil, nil, execResult.Ctx.Err()
+	}
+}
+
+func (e LinuxExecutor) executeAsync(command string, stdin io.ReadCloser, timeout time.Duration) (*ExecutionResult, error) {
+	exe, ctx, cancel, err := e.prepareCommand(command, stdin, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	// Setting up stdout and stderr
+	stdoutPipe, err := exe.StdoutPipe()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	stderrPipe, err := exe.StderrPipe()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	// Buffering stdout and stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdoutDone := make(chan struct{})
+	stderrDone := make(chan struct{})
+
+	go utilities.CopyAndClose(stdoutDone, &stdoutBuf, stdoutPipe)
+	go utilities.CopyAndClose(stderrDone, &stderrBuf, stderrPipe)
+
+	// Starting the command asynchronously
+	err = exe.Start()
+	if err != nil {
+		if cancel != nil {
+			cancel()
+		}
+		return nil, err
+	}
+
+	finished := make(chan error)
+	go func() {
+		defer close(finished)
+		finished <- exe.Wait()
 		if cancel != nil {
 			cancel()
 		}
 	}()
 
-	stdout, err = exe.StdoutPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	stderr, err = exe.StderrPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	stdoutDone := make(chan struct{})
-	stderrDone := make(chan struct{})
-
-	go utilities.CopyAndClose(stdoutDone, &stdoutBuf, stdout)
-	go utilities.CopyAndClose(stderrDone, &stderrBuf, stderr)
-
-	err = exe.Start()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Wait for the command to complete or for the timeout
-	done := make(chan error, 1)
-	go func() {
-		done <- exe.Wait()
-	}()
-
-	// Wait for completion or timeout
-	select {
-	case <-ctx.Done():
-		return nil, nil, ctx.Err()
-	case err := <-done:
-		return io.NopCloser(bytes.NewReader(stdoutBuf.Bytes())), io.NopCloser(bytes.NewReader(stderrBuf.Bytes())), err
-	}
+	return &ExecutionResult{
+		Stdout:   &stdoutBuf,
+		Stderr:   &stderrBuf,
+		Finished: finished,
+		Ctx:      ctx,
+	}, nil
 }
 
 func (e LinuxExecutor) prepareCommand(command string, stdin io.ReadCloser, timeout time.Duration) (*exec.Cmd, context.Context, context.CancelFunc, error) {
