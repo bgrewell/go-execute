@@ -14,48 +14,41 @@ import (
 	"time"
 )
 
-func NewExecutor() Executor {
-	return NewExecutorAsUser("", os.Environ())
+type PowerShellExecutor struct {
+	Environment []string
+	User        string
+	Session     *exec.Cmd
 }
 
-func NewExecutorWithEnv(env []string) Executor {
-	return NewExecutorAsUser("", env)
+func NewPowerShellExecutor() PowerShellExecutor {
+	return NewPowerShellExecutorAsUser("", os.Environ())
 }
 
-func NewExecutorAsUser(user string, env []string) Executor {
-	return &WindowsExecutor{
+func NewPowerShellExecutorWithEnv(env []string) PowerShellExecutor {
+	return NewPowerShellExecutorAsUser("", env)
+}
+
+func NewPowerShellExecutorAsUser(user string, env []string) PowerShellExecutor {
+	return PowerShellExecutor{
 		Environment: env,
 		User:        user,
 	}
 }
 
-type WindowsExecutor struct {
-	Environment []string
-	User        string
-}
-
-func (e WindowsExecutor) Execute(command string) (combined string, err error) {
+func (e PowerShellExecutor) Execute(command string) (string, error) {
 	return e.ExecuteWithTimeout(command, 0)
 }
 
-func (e WindowsExecutor) ExecuteSeparate(command string) (stdout string, stderr string, err error) {
-	return e.ExecuteSeparateWithTimeout(command, 0)
-}
-
-func (e WindowsExecutor) ExecuteStream(command string) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.ExecuteStreamWithTimeout(command, 0)
-}
-
-func (e WindowsExecutor) ExecuteStreamWithInput(command string, stdin io.ReadCloser) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.execute(command, stdin, 0)
-}
-
-func (e WindowsExecutor) ExecuteWithTimeout(command string, timeout time.Duration) (combined string, err error) {
+func (e PowerShellExecutor) ExecuteWithTimeout(command string, timeout time.Duration) (string, error) {
 	sout, serr, err := e.ExecuteSeparateWithTimeout(command, timeout)
 	return sout + serr, err
 }
 
-func (e WindowsExecutor) ExecuteSeparateWithTimeout(command string, timeout time.Duration) (stdout string, stderr string, err error) {
+func (e PowerShellExecutor) ExecuteSeparate(command string) (string, string, error) {
+	return e.ExecuteSeparateWithTimeout(command, 0)
+}
+
+func (e PowerShellExecutor) ExecuteSeparateWithTimeout(command string, timeout time.Duration) (string, string, error) {
 	sout, serr, err := e.execute(command, nil, timeout)
 	if err != nil {
 		return "", "", err
@@ -67,33 +60,67 @@ func (e WindowsExecutor) ExecuteSeparateWithTimeout(command string, timeout time
 	return string(outBytes), string(errBytes), nil
 }
 
-func (e WindowsExecutor) ExecuteStreamWithTimeout(command string, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
-	return e.execute(command, nil, timeout)
+func (e PowerShellExecutor) ExecuteScript(script string, parameters map[string]string) (string, error) {
+	command := "powershell -NoProfile -NonInteractive -Command " + script
+	for key, value := range parameters {
+		command += fmt.Sprintf(" -%s '%s'", key, value)
+	}
+	return e.Execute(command)
 }
 
-func (e WindowsExecutor) ExecuteTTY(command string) error {
-	exe, _, cancel, err := e.prepareCommand(command, os.Stdin, 0)
+func (e PowerShellExecutor) StartSession() error {
+	e.Session = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", "-")
+	e.Session.Env = e.Environment
+	if e.User != "" {
+		token, err := utilities.GetTokenForUser(e.User)
+		if err != nil {
+			return err
+		}
+		e.Session.SysProcAttr = &syscall.SysProcAttr{
+			Token: token,
+		}
+	}
+
+	stdin, err := e.Session.StdinPipe()
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if cancel != nil {
-			cancel()
-		}
+	go func() {
+		defer stdin.Close()
+		io.Copy(stdin, os.Stdin)
 	}()
 
-	exe.Stdout = os.Stdout
-	exe.Stderr = os.Stderr
-
-	err = exe.Start()
-	if err != nil {
-		return err
-	}
-
-	return exe.Wait()
+	return e.Session.Start()
 }
 
-func (e WindowsExecutor) execute(command string, stdin io.ReadCloser, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
+func (e PowerShellExecutor) ExecuteInSession(command string) (string, error) {
+	if e.Session == nil {
+		return "", errors.New("PowerShell session not started")
+	}
+
+	stdin, err := e.Session.StdinPipe()
+	if err != nil {
+		return "", err
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	e.Session.Stdout = &stdoutBuf
+	e.Session.Stderr = &stderrBuf
+
+	_, err = stdin.Write([]byte(command + "\n"))
+	if err != nil {
+		return "", err
+	}
+
+	err = e.Session.Wait()
+	if err != nil {
+		return "", err
+	}
+
+	return stdoutBuf.String() + stderrBuf.String(), nil
+}
+
+func (e PowerShellExecutor) execute(command string, stdin io.ReadCloser, timeout time.Duration) (stdout io.ReadCloser, stderr io.ReadCloser, err error) {
 	exe, ctx, cancel, err := e.prepareCommand(command, stdin, timeout)
 	if err != nil {
 		return nil, nil, err
@@ -141,7 +168,7 @@ func (e WindowsExecutor) execute(command string, stdin io.ReadCloser, timeout ti
 	}
 }
 
-func (e WindowsExecutor) prepareCommand(command string, stdin io.ReadCloser, timeout time.Duration) (*exec.Cmd, context.Context, context.CancelFunc, error) {
+func (e PowerShellExecutor) prepareCommand(command string, stdin io.ReadCloser, timeout time.Duration) (*exec.Cmd, context.Context, context.CancelFunc, error) {
 	ctx := context.Background()
 	var cancel context.CancelFunc
 
@@ -149,7 +176,7 @@ func (e WindowsExecutor) prepareCommand(command string, stdin io.ReadCloser, tim
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 	}
 
-	cmdParts, err := utilities.Fields(command) // Assuming utilities.Fields breaks the command string into parts
+	cmdParts, err := utilities.Fields(command)
 	if err != nil {
 		return nil, ctx, cancel, err
 	}
