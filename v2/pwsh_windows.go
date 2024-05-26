@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -166,8 +167,11 @@ func (e PowerShellExecutor) execute(command string, stdin io.ReadCloser, timeout
 	stdoutDone := make(chan struct{})
 	stderrDone := make(chan struct{})
 
-	go utilities.CopyAndClose(stdoutDone, &stdoutBuf, stdout)
-	go utilities.CopyAndClose(stderrDone, &stderrBuf, stderr)
+	var ready sync.WaitGroup
+	ready.Add(2)
+	go utilities.CopyAndClose(stdoutDone, &stdoutBuf, stdout, &ready)
+	go utilities.CopyAndClose(stderrDone, &stderrBuf, stderr, &ready)
+	ready.Wait()
 
 	err = exe.Start()
 	if err != nil {

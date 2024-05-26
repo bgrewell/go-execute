@@ -9,6 +9,7 @@ import (
 	"syscall"
 )
 
+// GetTokenForUser gets the token for the specified user.
 func GetTokenForUser(user string) (syscall.Token, error) {
 	// Try to find a process running as the target user
 	pid := int32(0)
@@ -32,6 +33,7 @@ func GetTokenForUser(user string) (syscall.Token, error) {
 	return token, nil
 }
 
+// GetTokenFromPid gets the token for the specified process ID.
 func GetTokenFromPid(pid int32) (syscall.Token, error) {
 	var err error
 	var token syscall.Token
@@ -53,6 +55,8 @@ func GetTokenFromPid(pid int32) (syscall.Token, error) {
 	return token, nil
 }
 
+// RunningAsAdmin checks to see if the current process is running as an administrator by attempting to open a handle
+// to the physical drive which typically requires admin privileges.
 func RunningAsAdmin() bool {
 	// Check to see if we are running with the right permissions
 	_, err := os.Open("\\\\.\\PHYSICALDRIVE0")
@@ -62,6 +66,7 @@ func RunningAsAdmin() bool {
 	return true
 }
 
+// HasRequiredPrivileges checks to see if the current process has the required privileges.
 func HasRequiredPrivileges() (admin bool, elevated bool, err error) {
 	var sid *windows.SID
 
@@ -88,6 +93,7 @@ func HasRequiredPrivileges() (admin bool, elevated bool, err error) {
 	return isAdmin, token.IsElevated(), nil
 }
 
+// LookupAccount looks up the account for the specified username.
 func LookupAccount(username string) (*syscall.SID, error) {
 	// Use the LookupAccountName syscall to verify the user exists
 	var sid *syscall.SID

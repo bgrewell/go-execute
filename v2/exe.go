@@ -8,9 +8,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 )
 
+// Executor is the interface that wraps the basic Execute functions.
 type Executor interface {
 	Execute(command string) (combined string, err error)
 	ExecuteSeparate(command string) (stdout string, stderr string, err error)
@@ -114,16 +116,19 @@ func (e BaseExecutor) ExecuteTTY(command string) error {
 func (e BaseExecutor) execute(command string, stdin io.ReadCloser, timeout time.Duration) (io.ReadCloser, io.ReadCloser, error) {
 	execResult, err := e.executeAsync(command, stdin, timeout)
 	if err != nil {
+		logger.Error("failed to execute command", "error", err)
 		return nil, nil, err
 	}
 
 	// Wait for completion or timeout using the context from execResult
 	select {
 	case err := <-execResult.Finished:
+		logger.Trace("command execution finished")
 		return io.NopCloser(bytes.NewReader(execResult.Stdout.(*bytes.Buffer).Bytes())),
 			io.NopCloser(bytes.NewReader(execResult.Stderr.(*bytes.Buffer).Bytes())),
 			err
 	case <-execResult.Ctx.Done():
+		logger.Error("command execution timed out", "error", execResult.Ctx.Err())
 		return nil, nil, execResult.Ctx.Err()
 	}
 }
@@ -138,11 +143,13 @@ func (e BaseExecutor) executeAsync(command string, stdin io.ReadCloser, timeout 
 	// Setting up stdout and stderr
 	stdoutPipe, err := exe.StdoutPipe()
 	if err != nil {
+		logger.Error("failed to get stdout pipe", "error", err)
 		cancel()
 		return nil, err
 	}
 	stderrPipe, err := exe.StderrPipe()
 	if err != nil {
+		logger.Error("failed to get stderr pipe", "error", err)
 		cancel()
 		return nil, err
 	}
@@ -151,28 +158,39 @@ func (e BaseExecutor) executeAsync(command string, stdin io.ReadCloser, timeout 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	stdoutDone := make(chan struct{})
 	stderrDone := make(chan struct{})
+	logger.Trace("captured stdout and stderr pipes")
 
-	go utilities.CopyAndClose(stdoutDone, &stdoutBuf, stdoutPipe)
-	go utilities.CopyAndClose(stderrDone, &stderrBuf, stderrPipe)
+	var ready sync.WaitGroup
+	ready.Add(2)
+	go utilities.CopyAndClose(stdoutDone, &stdoutBuf, stdoutPipe, &ready)
+	go utilities.CopyAndClose(stderrDone, &stderrBuf, stderrPipe, &ready)
+	logger.Trace("waiting for pipe readers to start")
+	ready.Wait()
+	logger.Trace("pipe readers have started")
 
 	// Starting the command asynchronously
 	err = exe.Start()
 	if err != nil {
+		logger.Error("failed to start command", "error", err)
 		if cancel != nil {
 			cancel()
 		}
 		return nil, err
 	}
+	logger.Trace("started command asynchronously")
 
 	finished := make(chan error)
 	go func() {
 		defer close(finished)
-		finished <- exe.Wait()
+		exitErr := exe.Wait()
+		finished <- exitErr
+		logger.Trace("command finished executing", "exit", exitErr)
 		if cancel != nil {
 			cancel()
 		}
 	}()
 
+	logger.Trace("returning ExecutionResults object")
 	return &ExecutionResult{
 		Stdout:   &stdoutBuf,
 		Stderr:   &stderrBuf,
@@ -187,28 +205,36 @@ func (e BaseExecutor) prepareCommand(command string, stdin io.ReadCloser, timeou
 	var cancel context.CancelFunc
 
 	if timeout != 0 {
+		logger.Trace("configuring command timeout", "timeout", timeout)
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 	}
 
 	cmdParts, err := utilities.Fields(command) // Assuming utilities.Fields breaks the command string into parts
 	if err != nil {
+		logger.Error("failed to get command parts", "error", err)
 		return nil, ctx, cancel, err
 	}
+	logger.Trace("split command into the parts", "cmdParts", cmdParts)
 
 	binary, err := exec.LookPath(cmdParts[0])
 	if err != nil {
+		logger.Error("failed to find binary path", "error", err)
 		return nil, ctx, cancel, err
 	}
+	logger.Trace("binary found", "binary", binary)
 
 	exe := exec.CommandContext(ctx, binary, cmdParts[1:]...)
 	exe.Stdin = stdin
 	exe.Env = e.Environment
+	logger.Trace("command context set", "environment", exe.Env)
 
 	if e.User != "" {
 		err := e.configureUser(ctx, cancel, exe)
 		if err != nil {
+			logger.Error("failed to configure command user", "error", err)
 			return exe, ctx, cancel, err
 		}
+		logger.Trace("configured user for execution", "user", e.User)
 	}
 
 	return exe, ctx, cancel, nil
