@@ -25,16 +25,16 @@ func main() {
 	}
 	fmt.Println(scriptResult)
 
-	//// Start a PowerShell session
-	//err = psExecutor.StartSession()
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//// Execute commands in the session
-	//sessionResult, err := psExecutor.ExecuteInSession("Get-Date")
-	//if err != nil {
-	//	panic(err)
-	//}
-	//fmt.Println(sessionResult)
+	// Start a PowerShell session
+	err = psExecutor.StartSession()
+	if err != nil {
+		panic(err)
+	}
+
+	// Execute commands in the session
+	sessionResult, err := psExecutor.ExecuteInSession("Get-Date")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(sessionResult)
 }

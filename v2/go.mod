@@ -3,6 +3,7 @@ module github.com/bgrewell/go-execute/v2
 go 1.21.2
 
 require (
+	github.com/BGrewell/go-execute v0.0.0-20240524232939-295cb29bb9e6
 	github.com/shirou/gopsutil/v3 v3.24.4
 	golang.org/x/sys v0.20.0
 )

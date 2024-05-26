@@ -7,11 +7,8 @@ import (
 
 func main() {
 
-	// Create a new executor
-	ex := execute.NewExecutor()
-
-	// Run a basic command
-	result, err := ex.Execute("whoami")
+	// Just run a command without creating an executor
+	result, err := execute.Execute("whoami")
 	if err != nil {
 		panic(err)
 	}
