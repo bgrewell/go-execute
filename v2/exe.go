@@ -3,11 +3,11 @@ package execute
 import (
 	"context"
 	"errors"
+	"github.com/bgrewell/go-execute/v2/internal"
 	"github.com/bgrewell/go-execute/v2/internal/utilities"
 	"io"
 	"os"
 	"os/exec"
-	"sync"
 	"time"
 )
 
@@ -159,18 +159,18 @@ func (e BaseExecutor) executeAsync(command string, stdin io.ReadCloser, timeout 
 	// we have visibility to when the pipes are closed at which point we can signal to have exe.Wait() called. Pipes
 	// needed to be used here instead of bytes.Buffer because bytes.Buffer will return EOF if read too early before
 	// there is input to read.
-	outTapReader, outTapWriter := io.Pipe()
-	errTapReader, errTapWriter := io.Pipe()
-	odone := make(chan struct{})
-	edone := make(chan struct{})
-
-	ready := &sync.WaitGroup{}
-	ready.Add(2)
-	go utilities.CopyAndClose(outTapWriter, stdoutPipe, ready, odone)
-	go utilities.CopyAndClose(errTapWriter, stderrPipe, ready, edone)
-	logger.Trace("finished setting up pipe readers")
-	ready.Wait()
-	logger.Trace("pipe readers have started")
+	outReadWriter := internal.NewExecReadWriter(stdoutPipe)
+	errReadWriter := internal.NewExecReadWriter(stderrPipe)
+	//odone := make(chan struct{})
+	//edone := make(chan struct{})
+	//
+	//ready := &sync.WaitGroup{}
+	//ready.Add(2)
+	//go utilities.CopyAndClose(outTapWriter, stdoutPipe, ready, odone)
+	//go utilities.CopyAndClose(errTapWriter, stderrPipe, ready, edone)
+	//logger.Trace("finished setting up pipe readers")
+	//ready.Wait()
+	//logger.Trace("pipe readers have started")
 
 	// Starting the command asynchronously
 	err = exe.Start()
@@ -186,12 +186,10 @@ func (e BaseExecutor) executeAsync(command string, stdin io.ReadCloser, timeout 
 	finished := make(chan error)
 	go func() {
 		defer close(finished)
-		<-edone
-		logger.Trace("error pipe reader has finished")
-		errTapWriter.Close()
-		<-odone
-		logger.Trace("output pipe reader has finished")
-		outTapWriter.Close()
+		errReadWriter.Wait()
+		logger.Trace("the errReadWriter has finished")
+		outReadWriter.Wait()
+		logger.Trace("the outReadWriter has finished")
 		exitErr := exe.Wait()
 		finished <- exitErr
 		logger.Trace("command finished executing", "exit", exitErr)
@@ -202,8 +200,8 @@ func (e BaseExecutor) executeAsync(command string, stdin io.ReadCloser, timeout 
 
 	logger.Trace("returning ExecutionResults object")
 	return &ExecutionResult{
-		Stdout:   outTapReader,
-		Stderr:   errTapReader,
+		Stdout:   outReadWriter,
+		Stderr:   errReadWriter,
 		Finished: finished,
 		Ctx:      ctx,
 	}, nil
