@@ -1,7 +1,6 @@
 package execute
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"github.com/bgrewell/go-execute/v2/internal/utilities"
@@ -121,12 +120,11 @@ func (e BaseExecutor) execute(command string, stdin io.ReadCloser, timeout time.
 	}
 
 	// Wait for completion or timeout using the context from execResult
+	logger.Trace("waiting for command execution to finish")
 	select {
 	case err := <-execResult.Finished:
 		logger.Trace("command execution finished")
-		return io.NopCloser(bytes.NewReader(execResult.Stdout.(*bytes.Buffer).Bytes())),
-			io.NopCloser(bytes.NewReader(execResult.Stderr.(*bytes.Buffer).Bytes())),
-			err
+		return execResult.Stdout.(io.ReadCloser), execResult.Stderr.(io.ReadCloser), err
 	case <-execResult.Ctx.Done():
 		logger.Error("command execution timed out", "error", execResult.Ctx.Err())
 		return nil, nil, execResult.Ctx.Err()
@@ -154,17 +152,23 @@ func (e BaseExecutor) executeAsync(command string, stdin io.ReadCloser, timeout 
 		return nil, err
 	}
 
-	// Buffering stdout and stderr
-	var stdoutBuf, stderrBuf bytes.Buffer
-	stdoutDone := make(chan struct{})
-	stderrDone := make(chan struct{})
-	logger.Trace("captured stdout and stderr pipes")
+	// In order to ensure that the command execution artifacts are cleaned up we need to know when the command exits.
+	// We can not use exe.Wait() to do this as that will trigger a cleanup of the resources and a premature close of
+	// the pipes used for stdout and stderr. Instead, we need to wait for the pipes to be closed but since we pass those
+	// through to the caller we need a way to have visibility to that. We end up using a second set of pipes so that
+	// we have visibility to when the pipes are closed at which point we can signal to have exe.Wait() called. Pipes
+	// needed to be used here instead of bytes.Buffer because bytes.Buffer will return EOF if read too early before
+	// there is input to read.
+	outTapReader, outTapWriter := io.Pipe()
+	errTapReader, errTapWriter := io.Pipe()
+	odone := make(chan struct{})
+	edone := make(chan struct{})
 
-	var ready sync.WaitGroup
+	ready := &sync.WaitGroup{}
 	ready.Add(2)
-	go utilities.CopyAndClose(stdoutDone, &stdoutBuf, stdoutPipe, &ready)
-	go utilities.CopyAndClose(stderrDone, &stderrBuf, stderrPipe, &ready)
-	logger.Trace("waiting for pipe readers to start")
+	go utilities.CopyAndClose(outTapWriter, stdoutPipe, ready, odone)
+	go utilities.CopyAndClose(errTapWriter, stderrPipe, ready, edone)
+	logger.Trace("finished setting up pipe readers")
 	ready.Wait()
 	logger.Trace("pipe readers have started")
 
@@ -182,6 +186,12 @@ func (e BaseExecutor) executeAsync(command string, stdin io.ReadCloser, timeout 
 	finished := make(chan error)
 	go func() {
 		defer close(finished)
+		<-edone
+		logger.Trace("error pipe reader has finished")
+		errTapWriter.Close()
+		<-odone
+		logger.Trace("output pipe reader has finished")
+		outTapWriter.Close()
 		exitErr := exe.Wait()
 		finished <- exitErr
 		logger.Trace("command finished executing", "exit", exitErr)
@@ -192,8 +202,8 @@ func (e BaseExecutor) executeAsync(command string, stdin io.ReadCloser, timeout 
 
 	logger.Trace("returning ExecutionResults object")
 	return &ExecutionResult{
-		Stdout:   &stdoutBuf,
-		Stderr:   &stderrBuf,
+		Stdout:   outTapReader,
+		Stderr:   errTapReader,
 		Finished: finished,
 		Ctx:      ctx,
 	}, nil
@@ -209,7 +219,7 @@ func (e BaseExecutor) prepareCommand(command string, stdin io.ReadCloser, timeou
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 	}
 
-	cmdParts, err := utilities.Fields(command) // Assuming utilities.Fields breaks the command string into parts
+	cmdParts, err := utilities.Fields(command)
 	if err != nil {
 		logger.Error("failed to get command parts", "error", err)
 		return nil, ctx, cancel, err
