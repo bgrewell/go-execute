@@ -1,5 +1,5 @@
 # Dockerfile
-FROM golang:1.18
+FROM golang:1.21.2
 
 # Install any additional dependencies
 RUN apt-get update && apt-get install -y \
