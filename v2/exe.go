@@ -351,7 +351,11 @@ func (e *BaseExecutor) buildScriptCommand(scriptType ScriptType, scriptPath stri
 	case ScriptTypePowerShell:
 		command = fmt.Sprintf("powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File %s", scriptPath)
 		for key, value := range parameters {
-			command += fmt.Sprintf(" -%s '%s'", key, value)
+			// Check to see if value already is wrapped in single quotes
+			if !strings.HasPrefix(value, "'") && !strings.HasSuffix(value, "'") {
+				value = fmt.Sprintf("'%s'", value)
+			}
+			command += fmt.Sprintf(" -%s %s", key, value)
 		}
 	case ScriptTypeBash:
 		return "", errors.New("bash support not yet implemented")
