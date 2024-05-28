@@ -224,6 +224,12 @@ func (e BaseExecutor) prepareCommand(command string, stdin io.ReadCloser, timeou
 	}
 	logger.Trace("split command into the parts", "cmdParts", cmdParts)
 
+	if len(cmdParts) == 0 {
+		err = errors.New("empty command")
+		logger.Error("failed to get command parts", "error", err)
+		return nil, ctx, cancel, err
+	}
+
 	binary, err := exec.LookPath(cmdParts[0])
 	if err != nil {
 		logger.Error("failed to find binary path", "error", err)

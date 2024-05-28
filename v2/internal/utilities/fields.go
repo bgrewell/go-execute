@@ -16,7 +16,7 @@ import (
 
 // Fields splits a string into fields while respecting quoted strings (both single and double quotes).
 func Fields(s string) ([]string, error) {
-	var fields []string
+	fields := make([]string, 0)
 	var field strings.Builder
 	var inSingleQuote, inDoubleQuote, escaping bool
 
