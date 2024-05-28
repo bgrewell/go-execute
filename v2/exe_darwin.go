@@ -2,9 +2,9 @@ package execute
 
 // NewExecutor creates a new Executor.
 func NewExecutor(options ...Option) Executor {
-	e := DarwinExecutor{}
+	e := &DarwinExecutor{}
 	for _, option := range options {
-		option(&e.BaseExecutor)
+		option(e)
 	}
 	return e
 }
@@ -16,7 +16,7 @@ type DarwinExecutor struct {
 
 // configureUser sets the user and group for the command to be executed.
 func (e DarwinExecutor) configureUser(ctx context.Context, cancel context.CancelFunc, exe *exec.Cmd) error {
-	u, err := user.Lookup(e.User)
+	u, err := user.Lookup(e.user)
 	if err != nil {
 		return nil, ctx, cancel, err
 	}

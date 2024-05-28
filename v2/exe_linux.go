@@ -10,9 +10,9 @@ import (
 
 // NewExecutor creates a new Executor.
 func NewExecutor(options ...Option) Executor {
-	e := LinuxExecutor{}
+	e := &LinuxExecutor{}
 	for _, option := range options {
-		option(&e.BaseExecutor)
+		option(e)
 	}
 	return e
 }
@@ -24,7 +24,7 @@ type LinuxExecutor struct {
 
 // configureUser sets the user and group for the command to be executed.
 func (e LinuxExecutor) configureUser(ctx context.Context, cancel context.CancelFunc, exe *exec.Cmd) error {
-	u, err := user.Lookup(e.User)
+	u, err := user.Lookup(e.user)
 	if err != nil {
 		return err
 	}

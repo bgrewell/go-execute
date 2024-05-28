@@ -2,6 +2,7 @@ package execute
 
 import (
 	"io"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -276,8 +277,13 @@ func TestExecuteSeparateWithTimeoutExceeds(t *testing.T) {
 }
 
 func TestExecuteAsyncWithTimeoutFailure(t *testing.T) {
+	shell := "/bin/bash"
+	if runtime.GOOS == "windows" {
+		shell = "powershell.exe"
+	}
+
 	e := NewExecutor(
-		WithShell("powershell.exe"),
+		WithShell(shell),
 	)
 
 	command := "sleep 5"
@@ -332,8 +338,13 @@ func TestExecuteAsyncWithTimeoutInvalidCommand(t *testing.T) {
 }
 
 func TestExecuteAsyncWithTimeoutZeroTimeout(t *testing.T) {
+	shell := "/bin/bash"
+	if runtime.GOOS == "windows" {
+		shell = "powershell.exe"
+	}
+
 	e := NewExecutor(
-		WithShell("powershell.exe"),
+		WithShell(shell),
 	)
 
 	command := "sleep 5"
@@ -345,7 +356,7 @@ func TestExecuteAsyncWithTimeoutZeroTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error executing command: %v", err)
 	}
-	stdout, err := io.ReadAll(execResult.Stdout)
+	_, err = io.ReadAll(execResult.Stdout)
 	if err != nil {
 		t.Fatalf("Error reading stdout: %v", err)
 	}
@@ -356,7 +367,6 @@ func TestExecuteAsyncWithTimeoutZeroTimeout(t *testing.T) {
 	if len(stderr) > 0 {
 		t.Fatalf("Unexpected stderr: %s", stderr)
 	}
-	t.Logf("%s: %s", command, stdout)
 }
 
 func TestExecuteTTYReturnsNoErrorForValidCommand(t *testing.T) {
@@ -384,6 +394,9 @@ func TestExecuteTTYReturnsErrorForEmptyCommand(t *testing.T) {
 }
 
 func TestExecuteScriptFromString(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("skipping test: current implementation only runs on Windows")
+	}
 	executor := &BaseExecutor{}
 
 	t.Run("ExecuteScriptFromString_WithValidScriptAndParameters", func(t *testing.T) {
@@ -435,6 +448,9 @@ func TestExecuteScriptFromString(t *testing.T) {
 }
 
 func TestExecuteScriptFromFile(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("skipping test: current implementation only runs on Windows")
+	}
 	executor := &BaseExecutor{}
 
 	t.Run("ExecuteScriptFromFile_WithValidScriptAndParameters", func(t *testing.T) {

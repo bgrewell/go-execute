@@ -200,20 +200,25 @@ func (e *BaseExecutor) executeScript(scriptType ScriptType, scriptPath string, a
 	}
 
 	sout, serr, err := e.execute(command, nil, timeout, true)
-
-	outBytes, soerr := io.ReadAll(sout)
-	if soerr != nil {
-		if err != nil {
-			return "", "", err
+	if err != nil {
+		var stdout, stderr []byte
+		if sout != nil {
+			stdout, _ = io.ReadAll(sout)
 		}
-		return "", "", soerr
+		if serr != nil {
+			stderr, _ = io.ReadAll(serr)
+		}
+		return string(stdout), string(stderr), err
 	}
-	errBytes, seerr := io.ReadAll(serr)
-	if seerr != nil {
-		if err != nil {
-			return "", "", err
-		}
-		return "", "", seerr
+
+	outBytes, err := io.ReadAll(sout)
+	if err != nil {
+		return "", "", err
+	}
+
+	errBytes, err := io.ReadAll(serr)
+	if err != nil {
+		return "", "", err
 	}
 
 	return string(outBytes), string(errBytes), err
