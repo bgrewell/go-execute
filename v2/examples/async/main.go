@@ -17,7 +17,14 @@ func main() {
 	logger.SetLevel(zapcore.DebugLevel)
 	execute.SetLogger(logger)
 
-	ex := execute.NewExecutor()
+	shell := "/bin/bash"
+	if runtime.GOOS == "windows" {
+		shell = "powershell"
+	}
+
+	ex := execute.NewExecutor(
+		execute.WithShell(shell),
+	)
 
 	cmd := "ls -laR /usr/share"
 	if runtime.GOOS == "windows" {

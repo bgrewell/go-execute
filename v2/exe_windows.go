@@ -6,34 +6,22 @@ import (
 	"fmt"
 	"github.com/bgrewell/go-execute/v2/internal/utilities"
 	"github.com/shirou/gopsutil/v3/process"
-	"os"
 	"os/exec"
 	"syscall"
 )
 
 // NewExecutor creates a new Executor.
-func NewExecutor() Executor {
-	return NewExecutorAsUser("", os.Environ())
-}
-
-// NewExecutorWithEnv creates a new Executor with the specified environment.
-func NewExecutorWithEnv(env []string) Executor {
-	return NewExecutorAsUser("", env)
-}
-
-// NewExecutorAsUser creates a new Executor with the specified user and environment.
-func NewExecutorAsUser(user string, env []string) Executor {
-	return &WindowsExecutor{
-		Environment: env,
-		User:        user,
+func NewExecutor(options ...Option) Executor {
+	e := &WindowsExecutor{}
+	for _, option := range options {
+		option(e)
 	}
+	return e
 }
 
 // WindowsExecutor is an Executor implementation for Windows systems.
 type WindowsExecutor struct {
 	BaseExecutor
-	Environment []string
-	User        string
 }
 
 // configureUser sets the user and group for the command to be executed.
@@ -47,7 +35,7 @@ func (e WindowsExecutor) configureUser(ctx context.Context, cancel context.Cance
 	processes, _ := process.Processes()
 	for _, process := range processes {
 		username, _ := process.Username()
-		if username == e.User {
+		if username == e.user {
 			pid = process.Pid
 			break
 		}

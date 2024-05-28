@@ -2,7 +2,6 @@ package execute
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"os/user"
 	"strconv"
@@ -10,28 +9,17 @@ import (
 )
 
 // NewExecutor creates a new Executor.
-func NewExecutor() Executor {
-	return NewExecutorAsUser("", os.Environ())
-}
-
-// NewExecutorWithEnv creates a new Executor with the specified environment.
-func NewExecutorWithEnv(env []string) Executor {
-	return NewExecutorAsUser("", env)
-}
-
-// NewExecutorAsUser creates a new Executor with the specified user and environment.
-func NewExecutorAsUser(user string, env []string) Executor {
-	return &LinuxExecutor{
-		Environment: env,
-		User:        user,
+func NewExecutor(options ...Option) Executor {
+	e := LinuxExecutor{}
+	for _, option := range options {
+		option(&e.BaseExecutor)
 	}
+	return e
 }
 
 // LinuxExecutor is an Executor implementation for Linux systems.
 type LinuxExecutor struct {
 	BaseExecutor
-	Environment []string
-	User        string
 }
 
 // configureUser sets the user and group for the command to be executed.

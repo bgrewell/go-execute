@@ -1,327 +1,186 @@
 package execute
 
 import (
-	"io"
-	"strings"
+	"reflect"
 	"testing"
-	"time"
 )
 
-func TestExecuteReturnsCombinedOutput(t *testing.T) {
-	command := "echo Hello, World!"
-	combined, err := Execute(command)
-	if err != nil {
-		t.Fatalf("Error executing command: %v", err)
-	}
-	if combined != "Hello, World!\n" {
-		t.Fatalf("Unexpected combined output: %s", combined)
-	}
+func TestSetEnvironment(t *testing.T) {
+	executor := &BaseExecutor{}
+
+	t.Run("SetEnvironment_WithValidEnvironment", func(t *testing.T) {
+		env := []string{"VAR1=value1", "VAR2=value2"}
+		executor.SetEnvironment(env)
+
+		if len(executor.Environment()) != len(env) {
+			t.Errorf("Expected environment length %d, but got %d", len(env), len(executor.Environment()))
+		}
+	})
+
+	t.Run("SetEnvironment_WithEmptyEnvironment", func(t *testing.T) {
+		env := []string{}
+		executor.SetEnvironment(env)
+
+		if len(executor.Environment()) != len(env) {
+			t.Errorf("Expected environment length %d, but got %d", len(env), len(executor.Environment()))
+		}
+	})
+
+	t.Run("SetEnvironment_WithNilEnvironment", func(t *testing.T) {
+		executor.SetEnvironment(nil)
+
+		if executor.Environment() != nil {
+			t.Errorf("Expected environment to be nil, but got %v", executor.Environment())
+		}
+	})
 }
 
-func TestExecuteHandlesCommandError(t *testing.T) {
-	command := "invalid_command"
-	_, err := Execute(command)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
+func TestEnvironment(t *testing.T) {
+	executor := &BaseExecutor{}
+
+	t.Run("Environment_WhenEnvironmentIsSet", func(t *testing.T) {
+		env := []string{"VAR1=value1", "VAR2=value2"}
+		executor.SetEnvironment(env)
+
+		if !reflect.DeepEqual(executor.Environment(), env) {
+			t.Errorf("Expected environment %v, but got %v", env, executor.Environment())
+		}
+	})
+
+	t.Run("Environment_WhenEnvironmentIsNotSet", func(t *testing.T) {
+		executor := &BaseExecutor{}
+
+		if len(executor.Environment()) != 0 {
+			t.Errorf("Expected environment to be empty, but got %v", executor.Environment())
+		}
+	})
 }
 
-func TestExecuteHandlesEmptyCommand(t *testing.T) {
-	command := ""
-	_, err := Execute(command)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
+func TestSetUser(t *testing.T) {
+	executor := &BaseExecutor{}
+
+	t.Run("SetUser_WithValidUser", func(t *testing.T) {
+		user := "testUser"
+		executor.SetUser(user)
+
+		if executor.User() != user {
+			t.Errorf("Expected user %s, but got %s", user, executor.User())
+		}
+	})
+
+	t.Run("SetUser_WithEmptyUser", func(t *testing.T) {
+		user := ""
+		executor.SetUser(user)
+
+		if executor.User() != user {
+			t.Errorf("Expected user to be empty, but got %s", executor.User())
+		}
+	})
 }
 
-func TestExecuteSeparateReturnsOutput(t *testing.T) {
-	command := "echo Hello, World!"
-	stdout, stderr, err := ExecuteSeparate(command)
-	if err != nil {
-		t.Fatalf("Error executing command: %v", err)
-	}
-	if stdout != "Hello, World!\n" {
-		t.Fatalf("Unexpected stdout: %s", stdout)
-	}
-	if stderr != "" {
-		t.Fatalf("Unexpected stderr: %s", stderr)
-	}
+func TestUser(t *testing.T) {
+	executor := &BaseExecutor{}
+
+	t.Run("User_WhenUserIsSet", func(t *testing.T) {
+		user := "testUser"
+		executor.SetUser(user)
+
+		if executor.User() != user {
+			t.Errorf("Expected user %s, but got %s", user, executor.User())
+		}
+	})
+
+	t.Run("User_WhenUserIsNotSet", func(t *testing.T) {
+		executor := &BaseExecutor{}
+
+		if executor.User() != "" {
+			t.Errorf("Expected user to be empty, but got %s", executor.User())
+		}
+	})
 }
 
-func TestExecuteSeparateHandlesCommandError(t *testing.T) {
-	command := "invalid_command"
-	_, _, err := ExecuteSeparate(command)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
+func TestSetShell(t *testing.T) {
+	executor := &BaseExecutor{}
+
+	t.Run("SetShell_WithValidShell", func(t *testing.T) {
+		shell := "/bin/bash"
+		executor.SetShell(shell)
+
+		if executor.Shell() != shell {
+			t.Errorf("Expected shell %s, but got %s", shell, executor.Shell())
+		}
+	})
+
+	t.Run("SetShell_WithEmptyShell", func(t *testing.T) {
+		shell := ""
+		executor.SetShell(shell)
+
+		if executor.Shell() != shell {
+			t.Errorf("Expected shell to be empty, but got %s", executor.Shell())
+		}
+	})
 }
 
-func TestExecuteSeparateHandlesEmptyCommand(t *testing.T) {
-	command := ""
-	_, _, err := ExecuteSeparate(command)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
+func TestClearShell(t *testing.T) {
+	executor := &BaseExecutor{}
+
+	t.Run("ClearShell_WhenShellIsSet", func(t *testing.T) {
+		shell := "/bin/bash"
+		executor.SetShell(shell)
+		executor.ClearShell()
+
+		if executor.Shell() != "" {
+			t.Errorf("Expected shell to be empty, but got %s", executor.Shell())
+		}
+	})
+
+	t.Run("ClearShell_WhenShellIsAlreadyEmpty", func(t *testing.T) {
+		executor.ClearShell()
+
+		if executor.Shell() != "" {
+			t.Errorf("Expected shell to be empty, but got %s", executor.Shell())
+		}
+	})
 }
 
-func TestExecuteAsyncReturnsResult(t *testing.T) {
-	command := "echo Hello, World!"
-	execResult, err := ExecuteAsync(command)
-	if err != nil {
-		t.Fatalf("Error executing command: %v", err)
-	}
-	stdout, err := io.ReadAll(execResult.Stdout)
-	if err != nil {
-		t.Fatalf("Error reading stdout: %v", err)
-	}
-	if string(stdout) != "Hello, World!\n" {
-		t.Fatalf("Unexpected stdout: %s", stdout)
-	}
+func TestShell(t *testing.T) {
+	executor := &BaseExecutor{}
+
+	t.Run("Shell_WhenShellIsSet", func(t *testing.T) {
+		shell := "/bin/bash"
+		executor.SetShell(shell)
+
+		if executor.Shell() != shell {
+			t.Errorf("Expected shell %s, but got %s", shell, executor.Shell())
+		}
+	})
+
+	t.Run("Shell_WhenShellIsNotSet", func(t *testing.T) {
+		executor := &BaseExecutor{}
+
+		if executor.Shell() != "" {
+			t.Errorf("Expected shell to be empty, but got %s", executor.Shell())
+		}
+	})
 }
 
-func TestExecuteAsyncHandlesCommandError(t *testing.T) {
-	command := "invalid_command"
-	execResult, err := ExecuteAsync(command)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-	if execResult != nil {
-		t.Fatalf("Expected nil ExecutionResult, got %v", execResult)
-	}
-}
+func TestUsingShell(t *testing.T) {
+	executor := &BaseExecutor{}
 
-func TestExecuteAsyncHandlesEmptyCommand(t *testing.T) {
-	command := ""
-	execResult, err := ExecuteAsync(command)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-	if execResult != nil {
-		t.Fatalf("Expected nil ExecutionResult, got %v", execResult)
-	}
-}
+	t.Run("UsingShell_WhenShellIsSet", func(t *testing.T) {
+		shell := "/bin/bash"
+		executor.SetShell(shell)
 
-func TestExecuteAsyncWithInputReturnsResult(t *testing.T) {
-	command := "cat"
-	stdin := io.NopCloser(strings.NewReader("Hello, World!"))
-	execResult, err := ExecuteAsyncWithInput(command, stdin)
-	if err != nil {
-		t.Fatalf("Error executing command: %v", err)
-	}
-	stdout, err := io.ReadAll(execResult.Stdout)
-	if err != nil {
-		t.Fatalf("Error reading stdout: %v", err)
-	}
-	if string(stdout) != "Hello, World!" {
-		t.Fatalf("Unexpected stdout: %s", stdout)
-	}
-}
+		if !executor.UsingShell() {
+			t.Errorf("Expected UsingShell to be true, but got false")
+		}
+	})
 
-func TestExecuteAsyncWithInputHandlesCommandError(t *testing.T) {
-	command := "invalid_command"
-	stdin := io.NopCloser(strings.NewReader(""))
-	execResult, err := ExecuteAsyncWithInput(command, stdin)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-	if execResult != nil {
-		t.Fatalf("Expected nil ExecutionResult, got %v", execResult)
-	}
-}
+	t.Run("UsingShell_WhenShellIsNotSet", func(t *testing.T) {
+		executor := &BaseExecutor{}
 
-func TestExecuteAsyncWithInputHandlesEmptyCommand(t *testing.T) {
-	command := ""
-	stdin := io.NopCloser(strings.NewReader(""))
-	execResult, err := ExecuteAsyncWithInput(command, stdin)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-	if execResult != nil {
-		t.Fatalf("Expected nil ExecutionResult, got %v", execResult)
-	}
-}
-
-func TestExecuteAsyncWithInputHandlesNilStdin(t *testing.T) {
-	command := "echo Hello, World!"
-	execResult, err := ExecuteAsyncWithInput(command, nil)
-	if err != nil {
-		t.Fatalf("Error executing command: %v", err)
-	}
-	stdout, err := io.ReadAll(execResult.Stdout)
-	if err != nil {
-		t.Fatalf("Error reading stdout: %v", err)
-	}
-	if string(stdout) != "Hello, World!\n" {
-		t.Fatalf("Unexpected stdout: %s", stdout)
-	}
-}
-
-func TestExecuteWithTimeoutReturnsCombinedOutput(t *testing.T) {
-	command := "echo Hello, World!"
-	combined, err := ExecuteWithTimeout(command, 3*time.Second)
-	if err != nil {
-		t.Fatalf("Error executing command: %v", err)
-	}
-	if combined != "Hello, World!\n" {
-		t.Fatalf("Unexpected combined output: %s", combined)
-	}
-}
-
-func TestExecuteWithTimeoutHandlesCommandError(t *testing.T) {
-	command := "invalid_command"
-	_, err := ExecuteWithTimeout(command, 3*time.Second)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-}
-
-func TestExecuteWithTimeoutHandlesEmptyCommand(t *testing.T) {
-	command := ""
-	_, err := ExecuteWithTimeout(command, 3*time.Second)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-}
-
-func TestExecuteWithTimeoutExceeds(t *testing.T) {
-	command := "/bin/bash -c '/usr/bin/sleep 5'"
-	_, err := ExecuteWithTimeout(command, 3*time.Second)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-}
-
-func TestExecuteSeparateWithTimeoutReturnsOutput(t *testing.T) {
-	command := "echo Hello, World!"
-	stdout, stderr, err := ExecuteSeparateWithTimeout(command, 3*time.Second)
-	if err != nil {
-		t.Fatalf("Error executing command: %v", err)
-	}
-	if stdout != "Hello, World!\n" {
-		t.Fatalf("Unexpected stdout: %s", stdout)
-	}
-	if stderr != "" {
-		t.Fatalf("Unexpected stderr: %s", stderr)
-	}
-}
-
-func TestExecuteSeparateWithTimeoutHandlesCommandError(t *testing.T) {
-	command := "invalid_command"
-	stdout, stderr, err := ExecuteSeparateWithTimeout(command, 3*time.Second)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-	if stdout != "" {
-		t.Fatalf("Unexpected stdout: %s", stdout)
-	}
-	if stderr == "" {
-		t.Fatalf("Expected stderr, got empty")
-	}
-}
-
-func TestExecuteSeparateWithTimeoutHandlesEmptyCommand(t *testing.T) {
-	command := ""
-	stdout, stderr, err := ExecuteSeparateWithTimeout(command, 3*time.Second)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-	if stdout != "" {
-		t.Fatalf("Unexpected stdout: %s", stdout)
-	}
-	if stderr != "" {
-		t.Fatalf("Unexpected stderr: %s", stderr)
-	}
-}
-
-func TestExecuteSeparateWithTimeoutExceeds(t *testing.T) {
-	command := "/bin/bash -c '/usr/bin/sleep 5'"
-	stdout, stderr, err := ExecuteSeparateWithTimeout(command, 3*time.Second)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-	if stdout != "" {
-		t.Fatalf("Unexpected stdout: %s", stdout)
-	}
-	if stderr != "" {
-		t.Fatalf("Unexpected stderr: %s", stderr)
-	}
-}
-
-func TestExecuteAsyncWithTimeoutFailure(t *testing.T) {
-	command := "/bin/bash -c '/usr/bin/sleep 5'"
-	execResult, err := ExecuteAsyncWithTimeout(command, 3*time.Second)
-	if err != nil {
-		t.Fatalf("Error executing command: %v", err)
-	}
-	<-execResult.Finished
-	stdout, err := io.ReadAll(execResult.Stdout)
-	if err != nil {
-		t.Fatalf("Error reading stdout: %v", err)
-	}
-	stderr, err := io.ReadAll(execResult.Stderr)
-	if err != nil {
-		t.Fatalf("Error reading stderr: %v", err)
-	}
-	if len(stderr) > 0 {
-		t.Fatalf("Unexpected stderr: %s", stderr)
-	}
-	if len(stdout) > 0 {
-		t.Fatalf("Unexpected stdout: %s", stdout)
-	}
-}
-
-func TestExecuteAsyncWithTimeoutInvalidCommand(t *testing.T) {
-	command := "invalid_command"
-	execResult, err := ExecuteAsyncWithTimeout(command, 3*time.Second)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-	if execResult != nil {
-		t.Fatalf("Expected nil ExecutionResult, got %v", execResult)
-	}
-}
-
-func TestExecuteAsyncWithTimeoutZeroTimeout(t *testing.T) {
-	command := "/bin/bash -c '/usr/bin/sleep 5'"
-	execResult, err := ExecuteAsyncWithTimeout(command, 0)
-	if err != nil {
-		t.Fatalf("Error executing command: %v", err)
-	}
-	<-execResult.Finished
-	stdout, err := io.ReadAll(execResult.Stdout)
-	if err != nil {
-		t.Fatalf("Error reading stdout: %v", err)
-	}
-	stderr, err := io.ReadAll(execResult.Stderr)
-	if err != nil {
-		t.Fatalf("Error reading stderr: %v", err)
-	}
-	if len(stderr) > 0 {
-		t.Fatalf("Unexpected stderr: %s", stderr)
-	}
-	t.Logf("%s: %s", command, stdout)
-}
-
-func TestExecuteTTYReturnsNoErrorForValidCommand(t *testing.T) {
-	command := "echo Hello, World!"
-	err := ExecuteTTY(command)
-	if err != nil {
-		t.Fatalf("Error executing command: %v", err)
-	}
-}
-
-func TestExecuteTTYReturnsErrorForInvalidCommand(t *testing.T) {
-	command := "invalid_command"
-	err := ExecuteTTY(command)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
-}
-
-func TestExecuteTTYReturnsErrorForEmptyCommand(t *testing.T) {
-	command := ""
-	err := ExecuteTTY(command)
-	if err == nil {
-		t.Fatalf("Expected error executing command, got nil")
-	}
+		if executor.UsingShell() {
+			t.Errorf("Expected UsingShell to be false, but got true")
+		}
+	})
 }

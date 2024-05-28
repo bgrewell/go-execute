@@ -1,32 +1,17 @@
 package execute
 
-import (
-	"os"
-)
-
 // NewExecutor creates a new Executor.
-func NewExecutor() Executor {
-	return NewExecutorAsUser("", os.Environ())
-}
-
-// NewExecutorWithEnv creates a new Executor with the specified environment.
-func NewExecutorWithEnv(env []string) Executor {
-	return NewExecutorAsUser("", env)
-}
-
-// NewExecutorAsUser creates a new Executor with the specified user and environment.
-func NewExecutorAsUser(user string, env []string) Executor {
-	return &DarwinExecutor{
-		Environment: env,
-		User:        user,
+func NewExecutor(options ...Option) Executor {
+	e := DarwinExecutor{}
+	for _, option := range options {
+		option(&e.BaseExecutor)
 	}
+	return e
 }
 
 // DarwinExecutor is an Executor implementation for Darwin systems.
 type DarwinExecutor struct {
 	BaseExecutor
-	Environment []string
-	User        string
 }
 
 // configureUser sets the user and group for the command to be executed.

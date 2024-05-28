@@ -12,7 +12,9 @@ func main() {
 		panic("windows not yet supported")
 	}
 
-	e := execute.NewExecutorAsUser("whoopsie", nil)
+	e := execute.NewExecutor(
+		execute.WithUser("whoopsie"),
+	)
 	result, err := e.Execute("whoami")
 	if err != nil {
 		fmt.Printf("[-] Error: %v\n", err)

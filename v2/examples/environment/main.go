@@ -9,12 +9,15 @@ import (
 func main() {
 
 	// Create a new executor with an env var set
-	e := execute.NewExecutorWithEnv([]string{"BOB=YOUR_UNCLE"})
+	e := execute.NewExecutor(
+		execute.WithDefaultShell(),
+		execute.WithEnvironment([]string{"BOB=YOUR_UNCLE"}),
+	)
 
 	// Use the appropriate command to print the enviornment variables
 	command := "env"
 	if runtime.GOOS == "windows" {
-		command = "cmd /C set"
+		command = "set"
 	}
 
 	// Execute and print env
