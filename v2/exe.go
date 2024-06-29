@@ -35,6 +35,8 @@ type Executor interface {
 	ClearShell()
 	Shell() string
 	UsingShell() bool
+	WorkingDir() string
+	SetWorkingDir(dir string)
 }
 
 // ExecutionResult holds the necessary structures for interaction with the process.
@@ -51,6 +53,7 @@ type BaseExecutor struct {
 	environment []string
 	user        string
 	shell       string
+	workingDir  string
 }
 
 // SetEnvironment sets the environment for the executor.
@@ -91,6 +94,16 @@ func (e *BaseExecutor) Shell() string {
 // UsingShell returns whether the executor is using a shell.
 func (e *BaseExecutor) UsingShell() bool {
 	return e.shell != ""
+}
+
+// WorkingDir returns the working directory if one is set
+func (e *BaseExecutor) WorkingDir() string {
+	return e.workingDir
+}
+
+// SetWorkingDir sets the working directory
+func (e *BaseExecutor) SetWorkingDir(dir string) string {
+	e.workingDir = dir
 }
 
 // Execute is the base implementation of the Execute function which executes a command and returns the combined output.
