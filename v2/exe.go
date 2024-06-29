@@ -102,7 +102,7 @@ func (e *BaseExecutor) WorkingDir() string {
 }
 
 // SetWorkingDir sets the working directory
-func (e *BaseExecutor) SetWorkingDir(dir string) string {
+func (e *BaseExecutor) SetWorkingDir(dir string) {
 	e.workingDir = dir
 }
 
@@ -476,6 +476,7 @@ func (e *BaseExecutor) prepareCommand(command string, stdin io.ReadCloser, timeo
 	exe := exec.CommandContext(ctx, binary, args...)
 	exe.Stdin = stdin
 	exe.Env = e.environment
+	exe.Dir = e.workingDir
 	logger.Trace("command context set", "environment", exe.Env)
 
 	if e.user != "" {

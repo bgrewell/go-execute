@@ -31,3 +31,9 @@ func WithShell(shell string) Option {
 		e.SetShell(shell)
 	}
 }
+
+func WithWorkingDir(dir string) Option {
+	return func(e Executor) {
+		e.SetWorkingDir(dir)
+	}
+}
