@@ -37,3 +37,9 @@ func WithWorkingDir(dir string) Option {
 		e.SetWorkingDir(dir)
 	}
 }
+
+func WithSudoCredentials(password string) Option {
+	return func(e Executor) {
+		e.SetSudoCredentials(password)
+	}
+}

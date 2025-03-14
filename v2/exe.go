@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/bgrewell/go-execute/v2/internal"
-	"github.com/bgrewell/go-execute/v2/internal/utilities"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/awnumar/memguard"
+	"github.com/bgrewell/go-execute/v2/internal"
+	"github.com/bgrewell/go-execute/v2/internal/utilities"
 )
 
 // Executor is the interface that wraps the basic Execute functions.
@@ -37,6 +39,8 @@ type Executor interface {
 	UsingShell() bool
 	WorkingDir() string
 	SetWorkingDir(dir string)
+	SetSudoCredentials(password string)
+	Close()
 }
 
 // ExecutionResult holds the necessary structures for interaction with the process.
@@ -54,6 +58,7 @@ type BaseExecutor struct {
 	user        string
 	shell       string
 	workingDir  string
+	sudoPass    *memguard.Enclave
 }
 
 // SetEnvironment sets the environment for the executor.
@@ -104,6 +109,17 @@ func (e *BaseExecutor) WorkingDir() string {
 // SetWorkingDir sets the working directory
 func (e *BaseExecutor) SetWorkingDir(dir string) {
 	e.workingDir = dir
+}
+
+// SetSudoCredentials sets the sudo password for the executor using secure memory.
+func (e *BaseExecutor) SetSudoCredentials(password string) {
+	buffer := memguard.NewBufferFromBytes([]byte(password))
+	e.sudoPass = buffer.Seal()
+}
+
+// Close ensures secure cleanup of sensitive data
+func (e *BaseExecutor) Close() {
+	e.sudoPass = nil
 }
 
 // Execute is the base implementation of the Execute function which executes a command and returns the combined output.
@@ -454,13 +470,28 @@ func (e *BaseExecutor) prepareCommand(command string, stdin io.ReadCloser, timeo
 	var binary string
 	var args []string
 	if !e.UsingShell() {
-		binary, err = exec.LookPath(cmdParts[0])
-		if err != nil {
-			logger.Error("failed to find binary path", "error", err)
-			return nil, ctx, cancel, err
+		// Check if command starts with sudo
+		if len(cmdParts) > 0 && cmdParts[0] == "sudo" && e.sudoPass != nil {
+			// Create a pipe for sudo password input using secure password
+			if stdin == nil {
+				buf, err := e.sudoPass.Open()
+				if err != nil {
+					return nil, ctx, cancel, fmt.Errorf("failed to access sudo password: %w", err)
+				}
+				defer buf.Destroy()
+				stdin = io.NopCloser(strings.NewReader(string(buf.Bytes()) + "\n"))
+			}
+			binary = "sudo"
+			args = append([]string{"-S"}, cmdParts[1:]...)
+		} else {
+			binary, err = exec.LookPath(cmdParts[0])
+			if err != nil {
+				logger.Error("failed to find binary path", "error", err)
+				return nil, ctx, cancel, err
+			}
+			logger.Trace("binary found", "binary", binary)
+			args = cmdParts[1:]
 		}
-		logger.Trace("binary found", "binary", binary)
-		args = cmdParts[1:]
 	} else {
 		binary = e.shell
 		switch strings.ToLower(binary) {
