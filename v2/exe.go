@@ -470,7 +470,7 @@ func (e *BaseExecutor) prepareCommand(command string, stdin io.ReadCloser, timeo
 	var binary string
 	var args []string
 	if !e.UsingShell() {
-		// Check if command starts with sudo
+		// When not using a shell, we can only handle sudo at the start of the command
 		if len(cmdParts) > 0 && cmdParts[0] == "sudo" && e.sudoPass != nil {
 			// Create a pipe for sudo password input using secure password
 			if stdin == nil {
@@ -494,6 +494,16 @@ func (e *BaseExecutor) prepareCommand(command string, stdin io.ReadCloser, timeo
 		}
 	} else {
 		binary = e.shell
+		// When using a shell, we can handle sudo anywhere in the command by injecting the password
+		if strings.Contains(command, "sudo ") && e.sudoPass != nil {
+			buf, err := e.sudoPass.Open()
+			if err != nil {
+				return nil, ctx, cancel, fmt.Errorf("failed to access sudo password: %w", err)
+			}
+			defer buf.Destroy()
+			// Replace sudo with echo password | sudo -S to handle password input
+			command = strings.Replace(command, "sudo ", fmt.Sprintf("echo '%s' | sudo -S ", string(buf.Bytes())), -1)
+		}
 		switch strings.ToLower(binary) {
 		case "cmd", "cmd.exe":
 			args = []string{"/c", command}
