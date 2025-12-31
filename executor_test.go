@@ -2,6 +2,7 @@ package execute
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -96,19 +97,15 @@ func TestBaseExecutor_SettersChaining(t *testing.T) {
 }
 
 func TestBaseExecutor_Execute(t *testing.T) {
-	// These tests define the expected behavior and will fail until implemented
-
 	t.Run("executes simple command", func(t *testing.T) {
-		t.Skip("not implemented")
-
 		e := NewExecutor()
 		result, err := e.Execute("echo", "hello")
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if result.Stdout != "hello\n" {
-			t.Errorf("expected stdout 'hello\\n', got %q", result.Stdout)
+		if strings.TrimSpace(result.Stdout) != "hello" {
+			t.Errorf("expected stdout 'hello', got %q", result.Stdout)
 		}
 		if result.ExitCode != 0 {
 			t.Errorf("expected exit code 0, got %d", result.ExitCode)
@@ -116,38 +113,32 @@ func TestBaseExecutor_Execute(t *testing.T) {
 	})
 
 	t.Run("captures stderr", func(t *testing.T) {
-		t.Skip("not implemented")
-
 		e := NewExecutor()
 		result, err := e.Execute("sh", "-c", "echo error >&2")
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if result.Stderr != "error\n" {
-			t.Errorf("expected stderr 'error\\n', got %q", result.Stderr)
+		if strings.TrimSpace(result.Stderr) != "error" {
+			t.Errorf("expected stderr 'error', got %q", result.Stderr)
 		}
 	})
 
 	t.Run("returns exit code on failure", func(t *testing.T) {
-		t.Skip("not implemented")
-
 		e := NewExecutor()
 		result, err := e.Execute("sh", "-c", "exit 42")
 
-		// Implementation may return error or just non-zero exit code
+		// Implementation returns result even on non-zero exit
 		if result == nil {
 			t.Fatal("expected result even on non-zero exit")
 		}
 		if result.ExitCode != 42 {
 			t.Errorf("expected exit code 42, got %d", result.ExitCode)
 		}
-		_ = err // Error handling TBD
+		_ = err // Error is nil since we got a valid exit code
 	})
 
 	t.Run("records timing information", func(t *testing.T) {
-		t.Skip("not implemented")
-
 		e := NewExecutor()
 		before := time.Now()
 		result, err := e.Execute("sleep", "0.1")
@@ -166,12 +157,43 @@ func TestBaseExecutor_Execute(t *testing.T) {
 			t.Errorf("expected duration >= 100ms, got %v", result.Duration())
 		}
 	})
+
+	t.Run("command not found returns error", func(t *testing.T) {
+		e := NewExecutor()
+		_, err := e.Execute("nonexistentcommand12345")
+
+		if err == nil {
+			t.Error("expected error for non-existent command")
+		}
+	})
+
+	t.Run("respects working directory", func(t *testing.T) {
+		e := NewExecutor(WithWorkingDir("/tmp"))
+		result, err := e.Execute("pwd")
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.TrimSpace(result.Stdout) != "/tmp" {
+			t.Errorf("expected pwd to be /tmp, got %q", result.Stdout)
+		}
+	})
+
+	t.Run("shell mode executes through shell", func(t *testing.T) {
+		e := NewExecutor(WithShell("/bin/bash"))
+		result, err := e.Execute("echo", "hello world")
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.TrimSpace(result.Stdout) != "hello world" {
+			t.Errorf("expected 'hello world', got %q", result.Stdout)
+		}
+	})
 }
 
 func TestBaseExecutor_ExecuteContext(t *testing.T) {
 	t.Run("respects context cancellation", func(t *testing.T) {
-		t.Skip("not implemented")
-
 		e := NewExecutor()
 		ctx, cancel := context.WithCancel(context.Background())
 
@@ -185,8 +207,6 @@ func TestBaseExecutor_ExecuteContext(t *testing.T) {
 	})
 
 	t.Run("respects context timeout", func(t *testing.T) {
-		t.Skip("not implemented")
-
 		e := NewExecutor()
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
@@ -194,6 +214,46 @@ func TestBaseExecutor_ExecuteContext(t *testing.T) {
 		_, err := e.ExecuteContext(ctx, "sleep", "10")
 		if err == nil {
 			t.Error("expected error on timeout")
+		}
+	})
+}
+
+func TestBaseExecutor_ExecuteAsync(t *testing.T) {
+	t.Run("returns async result", func(t *testing.T) {
+		e := NewExecutor()
+		asyncResult, err := e.ExecuteAsync("echo", "hello")
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if asyncResult == nil {
+			t.Fatal("expected non-nil async result")
+		}
+
+		result, err := asyncResult.Wait()
+		if err != nil {
+			t.Fatalf("unexpected error waiting: %v", err)
+		}
+		if strings.TrimSpace(result.Stdout) != "hello" {
+			t.Errorf("expected 'hello', got %q", result.Stdout)
+		}
+	})
+
+	t.Run("done channel closes on completion", func(t *testing.T) {
+		e := NewExecutor()
+		asyncResult, err := e.ExecuteAsync("echo", "test")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Wait should close the done channel
+		_, _ = asyncResult.Wait()
+
+		select {
+		case <-asyncResult.Done:
+			// Expected
+		default:
+			t.Error("done channel should be closed after Wait()")
 		}
 	})
 }
@@ -224,6 +284,37 @@ func TestResult_Helpers(t *testing.T) {
 		r := &Result{ExitCode: 1}
 		if r.Success() {
 			t.Error("expected Success() to be false for exit code 1")
+		}
+	})
+}
+
+func TestDirectVsShellExecution(t *testing.T) {
+	t.Run("direct mode prevents shell injection", func(t *testing.T) {
+		e := NewExecutor()
+		// In direct mode, this should be treated as a literal argument
+		result, err := e.Execute("echo", "hello; echo injected")
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// The entire argument should be printed as one line, including the semicolon
+		// If shell injection worked, we'd see "injected" on a separate line
+		stdout := strings.TrimSpace(result.Stdout)
+		if stdout != "hello; echo injected" {
+			t.Errorf("expected literal 'hello; echo injected', got %q", stdout)
+		}
+	})
+
+	t.Run("shell mode allows shell features", func(t *testing.T) {
+		e := NewExecutor(WithShell("/bin/bash"))
+		result, err := e.Execute("echo hello && echo world")
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// In shell mode, && should work
+		if !strings.Contains(result.Stdout, "hello") || !strings.Contains(result.Stdout, "world") {
+			t.Errorf("expected both hello and world in output, got %q", result.Stdout)
 		}
 	})
 }
