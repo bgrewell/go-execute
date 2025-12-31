@@ -1,29 +1,21 @@
 # go-execute
 
-A Go library for safe and ergonomic execution of system commands.
+Safe, ergonomic command execution for Go.
 
-## Design Principles
+```go
+result, err := execute.Run("git", "status", "--porcelain")
+```
 
-### Safety First
+## Why go-execute?
 
-go-execute is designed to make it safer to execute system commands from Go applications, particularly in contexts where security matters—such as web applications, APIs, and tools that process user input.
+Go's `os/exec` is powerful but makes it easy to write code vulnerable to shell injection. go-execute provides a safer default while remaining simple to use.
 
-**Key safety features:**
-
-- **Direct execution by default**: Commands are executed directly without invoking a shell, eliminating an entire class of shell injection vulnerabilities. The executable is resolved via `exec.LookPath` and called directly with arguments passed as a list, not a string.
-
-- **Explicit shell opt-in**: Shell execution is only used when explicitly requested via `WithShell()`. This makes dangerous patterns visible in code review and ensures developers consciously choose when shell features (pipes, redirects, globbing) are needed.
-
-- **Structured command building**: Safe command wrappers provide a builder pattern API that constructs commands programmatically, avoiding string concatenation of user input.
-
-### Usability
-
-go-execute aims to be the most ergonomic way to execute commands in Go:
-
-- **Simple things are simple**: Basic command execution requires minimal code
-- **Complex things are possible**: Full control over environment, working directory, user context, timeouts, and async execution
-- **Builder pattern for common commands**: Type-safe wrappers for grep, ls, cat, and find with structured results
-- **Cross-platform**: Abstracts OS differences so the same code works on Linux, macOS, and Windows
+| Feature | go-execute | os/exec |
+|---------|-----------|---------|
+| Shell injection protection | Default | Manual |
+| Structured output parsing | Built-in | DIY |
+| Async with proper pipe handling | Built-in | Tricky |
+| Cross-platform command wrappers | Yes | No |
 
 ## Installation
 
@@ -31,61 +23,94 @@ go-execute aims to be the most ergonomic way to execute commands in Go:
 go get github.com/bgrewell/go-execute
 ```
 
-## Usage
-
-### Basic Execution (Safe by Default)
+## Quick Start
 
 ```go
-// Direct execution - no shell involved
-result, err := execute.Run("ls", "-la", "/tmp")
-if err != nil {
-    log.Fatal(err)
-}
+import "github.com/bgrewell/go-execute"
+
+// Simple command
+result, err := execute.Run("ls", "-la")
 fmt.Println(result.Stdout)
+
+// With options
+exec := execute.NewExecutor(
+    execute.WithWorkingDir("/tmp"),
+    execute.WithEnvironment([]string{"DEBUG=1"}),
+)
+result, err := exec.Execute("make", "build")
+
+// Async execution
+async, _ := execute.RunAsync("long-task")
+go io.Copy(os.Stdout, async.Stdout)
+result, err := async.Wait()
 ```
 
-### When You Need a Shell
+## Safe by Default
+
+Commands execute **directly without a shell**, preventing injection attacks:
 
 ```go
-// Explicit opt-in for shell features (pipes, redirects, etc.)
+// Safe: argument treated as literal, not interpreted
+execute.Run("echo", userInput)  // userInput = "hello; rm -rf /"
+// Runs: echo "hello; rm -rf /"
+
+// Shell required? Opt-in explicitly:
 exec := execute.NewExecutor(execute.WithShell("/bin/bash"))
-result, err := exec.Execute("cat /var/log/*.log | grep error | head -10")
+exec.Execute("ls *.go | head -5")
 ```
 
-### Safe Command Wrappers
+## Command Wrappers
+
+Type-safe builders for common commands with structured results:
 
 ```go
-// Type-safe builder pattern - immune to injection
-result, err := execute.Grep(userPattern).
-    InPath("/var/log").
+// Grep with parsed results
+result, _ := execute.Grep("TODO").
+    InPath("./src").
     Recursive().
     IgnoreCase().
     Run()
 
-for _, match := range result.Matches {
-    fmt.Printf("%s:%d: %s\n", match.File, match.Line, match.Content)
+for _, m := range result.Matches {
+    fmt.Printf("%s:%d: %s\n", m.File, m.Line, m.Content)
+}
+
+// List files
+files, _ := execute.Ls("/var/log").Long().Run()
+for _, f := range files.Entries {
+    fmt.Printf("%s %d bytes\n", f.Name, f.Size)
 }
 ```
 
-### Async Execution
+Available wrappers: `Grep`, `Ls`, `Cat`, `Find`
+
+## Configuration
 
 ```go
-result, err := execute.RunAsync("long-running-command", "arg1", "arg2")
-if err != nil {
-    log.Fatal(err)
+exec := execute.NewExecutor(
+    execute.WithWorkingDir("/path/to/dir"),
+    execute.WithEnvironment([]string{"KEY=value"}),
+    execute.WithShell("/bin/bash"),      // Enable shell mode
+    execute.WithUser("www-data"),        // Run as user (Unix)
+    execute.WithSudoPassword("..."),     // For sudo commands
+)
+```
+
+## Context Support
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+
+result, err := execute.RunContext(ctx, "slow-command")
+if errors.Is(err, context.DeadlineExceeded) {
+    // Handle timeout
 }
-
-// Stream output as it arrives
-go io.Copy(os.Stdout, result.Stdout)
-go io.Copy(os.Stderr, result.Stderr)
-
-// Wait for completion
-finalResult, err := result.Wait()
 ```
 
 ## Examples
 
-See the [examples](./examples) directory for more usage examples.
+See the [examples](./examples) directory for complete working examples.
 
 ## License
 
